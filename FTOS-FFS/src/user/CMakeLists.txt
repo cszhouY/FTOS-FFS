@@ -33,7 +33,9 @@ add_custom_target(mkfs ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mkfs)
 # add targets here if needed.
 set(user_binary_list
 	init
-	sh)
+	sh
+	echo
+	ls)
 
 foreach(binary ${user_binary_list})
 	add_executable(${binary} ${CMAKE_CURRENT_SOURCE_DIR}/${binary}/main.c)
