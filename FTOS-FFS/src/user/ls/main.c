@@ -1,73 +1,93 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <dirent.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "../../fs/defines.h"
 #include <string.h>
+#include <sys/stat.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 
-// 比较函数，用于qsort排序
-int compare(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
+char *fmtname(char *path)
+{
+    static char buf[FILE_NAME_MAX_LENGTH + 1];
+    char *p;
+
+    // Find first character after last slash.
+    for (p = path + strlen(path); p >= path && *p != '/'; p--)
+        ;
+    p++;
+
+    // Return blank-padded name.
+    if (strlen(p) >= FILE_NAME_MAX_LENGTH)
+        return p;
+    memmove(buf, p, strlen(p));
+    memset(buf + strlen(p), ' ', FILE_NAME_MAX_LENGTH - strlen(p));
+    return buf;
 }
 
-int main(int argc, char *argv[]) {
-    struct dirent *entry;
-    DIR *dp;
-    struct stat file_info;
+void ls(char *path)
+{
+    char buf[512], *p;
+    int fd;
+    struct dirent de;
+    struct stat st;
 
-    // 默认列出当前目录
-    char *path = ".";
-
-    // 如果提供了命令行参数，则使用第一个参数作为路径
-    if (argc > 1) {
-        path = argv[1];
+    if ((fd = open(path, 0)) < 0)
+    {
+        printf("ls: cannot open %s\n", path);
+        return;
     }
 
-    dp = opendir(path);
-
-    if (dp == NULL) {
-        perror("opendir");
-        return 1;
+    if (fstat(fd, &st) < 0)
+    {
+        printf("ls: cannot stat %s\n", path);
+        close(fd);
+        return;
     }
 
-    // 保存目录项名字的数组
-    char *entries[1000];
-    int count = 0;
+    switch (st.st_mode)
+    {
+    case S_IFREG:
+        printf("%s %d %d %d\n", fmtname(path), st.st_mode, st.st_ino, st.st_size);
+        break;
 
-    while ((entry = readdir(dp))) {
-        entries[count++] = strdup(entry->d_name);
-    }
-
-    // 使用qsort对目录项进行排序
-    qsort(entries, count, sizeof(char *), compare);
-
-    for (int i = 0; i < count; i++) {
-        char full_path[1024];
-        snprintf(full_path, sizeof(full_path), "%s/%s", path, entries[i]);
-
-        // 获取文件信息
-        if (stat(full_path, &file_info) == -1) {
-            perror("stat");
-            continue;
+    case S_IFDIR:
+        if (strlen(path) + 1 + FILE_NAME_MAX_LENGTH + 1 > sizeof buf)
+        {
+            printf("ls: path too long\n");
+            break;
         }
-
-        printf("%s", entries[i]);
-
-        // 如果是目录，则显示一个斜杠
-        if (S_ISDIR(file_info.st_mode)) {
-            printf("/");
+        strcpy(buf, path);
+        p = buf + strlen(buf);
+        *p++ = '/';
+        while (read(fd, &de, sizeof(de)) == sizeof(de))
+        {
+            if (de.inode_no == 0)
+                continue;
+            memmove(p, de.name, FILE_NAME_MAX_LENGTH);
+            p[FILE_NAME_MAX_LENGTH] = 0;
+            if (stat(buf, &st) < 0)
+            {
+                printf("ls: cannot stat %s\n", buf);
+                continue;
+            }
+            printf("%s %d %d %d\n", fmtname(buf), st.st_mode, st.st_ino, st.st_size);
         }
-
-        printf("\n");
+        break;
     }
+    close(fd);
+}
 
-    // 释放分配的内存
-    for (int i = 0; i < count; i++) {
-        free(entries[i]);
+int main(int argc, char *argv[])
+{
+    int i;
+
+    if (argc < 2)
+    {
+        ls(".");
+        return 0;
     }
-
-    closedir(dp);
-
+    for (i = 1; i < argc; i++)
+        ls(argv[i]);
+    
+    
     return 0;
 }

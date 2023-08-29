@@ -2,38 +2,40 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#define BUFFER_SIZE 4096
+char buf[512];
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        printf("Usage: %s <filename>\n", argv[0]);
-        return 1;
+void cat(int fd)
+{
+    int n;
+
+    while ((n = read(fd, buf, sizeof(buf))) > 0)
+        write(1, buf, n);
+    if (n < 0)
+    {
+        printf("cat: read error\n");
+        return;
+    }
+}
+
+int main(int argc, char *argv[])
+{
+    int fd, i;
+
+    if (argc <= 1)
+    {
+        printf("Usage: cat files...\n");
+        return 0;
     }
 
-    char *filename = argv[1];
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) {
-        printf("Failed to open file: %s\n", filename);
-        return 1;
-    }
-
-    char buffer[BUFFER_SIZE];
-    ssize_t bytesRead;
-    while ((bytesRead = read(fd, buffer, BUFFER_SIZE)) > 0) {
-        ssize_t bytesWritten = write(STDOUT_FILENO, buffer, bytesRead);
-        if (bytesWritten != bytesRead) {
-            printf("Failed to write to stdout\n");
-            close(fd);
-            return 1;
+    for (i = 1; i < argc; i++)
+    {
+        if ((fd = open(argv[i], 0000)) < 0)
+        {
+            printf("cat: cannot open %s\n", argv[i]);
+            return 0;
         }
-    }
-
-    if (bytesRead == -1) {
-        printf("Failed to read file: %s\n", filename);
+        cat(fd);
         close(fd);
-        return 1;
     }
-
-    close(fd);
     return 0;
 }

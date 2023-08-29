@@ -35,6 +35,8 @@ set(user_binary_list
 	init
 	sh
 	echo
+	cat
+	mkdir
 	ls)
 
 foreach(binary ${user_binary_list})
