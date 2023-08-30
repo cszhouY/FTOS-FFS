@@ -61,9 +61,9 @@ typedef struct {
     u32 log_start;       // the first block of logging area.
     u32 bg_start;    // the first block of block groups.
 
-    u32 num_inodes_per_group; // number of inode blocks in a single block group
+    u32 num_inodeblocks_per_group; // number of inode blocks in a single block group
     u32 num_bitmap_per_group; // number of bitmap blocks in a single block group
-    u32 num_data_per_group; // number of data blocks in a single block group
+    u32 num_datablocks_per_group; // number of data blocks in a single block group
     u32 bitmap_start_per_group; // the first block of bitmap blocks in a single block group
     u32 data_start_per_group; // the first block of data blocks in a single block group
 } SuperBlock;
@@ -98,4 +98,4 @@ typedef struct {
 } LogHeader;
 
 // mkfs only
-#define FSSIZE 1000  // Size of file system in blocks
+#define FSSIZE 1000 + 2 + LOG_MAX_SIZE  // Size of file system in blocks

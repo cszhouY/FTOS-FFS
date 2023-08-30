@@ -31,6 +31,7 @@ struct xv6_stat;
 
 /* 修改常量 */
 #define NINODES 200
+#define NGROUPS 10
 
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
@@ -40,10 +41,16 @@ struct xv6_stat;
 #define NINDIRECT     INODE_NUM_INDIRECT
 #define DIRSIZ        FILE_NAME_MAX_LENGTH
 #define IPB           (BSIZE / sizeof(InodeEntry))
-#define IBLOCK(i, sb) ((i) / IPB + sb.inode_start)
+#define BPG           (FSSIZE - 2 - LOGSIZE) / NGROUPS
+#define NIPG          NINODES / NGROUPS
+#define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
 
-int nbitmap = FSSIZE / (BSIZE * 8) + 1;
-int ninodeblocks = NINODES / IPB + 1;
+int blocks_per_group = BPG;
+int ninodeblocks_per_group = (NINODES / NGROUPS) / IPB + 1;
+int nbitmap_per_group = BPG / (BIT_PER_BLOCK) + 1;
+
+// int nbitmap = FSSIZE / (BSIZE * 8) + 1;
+// int ninodeblocks = NINODES / IPB + 1;
 int num_log_blocks = LOGSIZE;
 int nmeta;            // Number of meta blocks (boot, sb, num_log_blocks, inode, bitmap)
 int num_data_blocks;  // Number of data blocks
@@ -109,8 +116,8 @@ int main(int argc, char *argv[]) {
     /* 修改初始文件系统生成 */
         /* 修改超级块的初始化过程 */
     // 1 fs block = 1 disk sector
-    // nmeta = 2 + num_log_blocks + ninodeblocks + nbitmap;
-    // num_data_blocks = FSSIZE - nmeta;
+    nmeta = 2 + num_log_blocks + ninodeblocks_per_group * NGROUPS + nbitmap_per_group * NGROUPS;
+    num_data_blocks = FSSIZE - nmeta;
 
     // sb.num_blocks = xint(FSSIZE);
     // sb.num_data_blocks = xint(num_data_blocks);
@@ -122,17 +129,17 @@ int main(int argc, char *argv[]) {
 
     sb.num_blocks = xint(FSSIZE);
     sb.num_log_blocks = xint(num_log_blocks);  
-    sb.num_groups = xint();
-    sb.blocks_per_group = xint(); 
+    sb.num_groups = xint(NGROUPS);
+    sb.blocks_per_group = xint(blocks_per_group); 
 
     sb.log_start = xint(2);   
     sb.bg_start = xint(2 + num_log_blocks);    
 
-    sb.num_inodes_per_group = xint(); 
-    sb.num_bitmap_per_group = xint(); 
-    sb.num_data_per_group = xint(); 
-    sb.bitmap_start_per_group = xint(); 
-    sb.data_start_per_group = xint(); 
+    sb.num_inodeblocks_per_group = xint(ninodeblocks_per_group); 
+    sb.num_bitmap_per_group = xint(nbitmap_per_group); 
+    sb.num_datablocks_per_group = xint(blocks_per_group - ninodeblocks_per_group - nbitmap_per_group); 
+    sb.bitmap_start_per_group = xint(ninodeblocks_per_group); 
+    sb.data_start_per_group = xint(ninodeblocks_per_group + nbitmap_per_group); 
 
     // printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d "
     //        "total %d\n",
@@ -143,12 +150,12 @@ int main(int argc, char *argv[]) {
     //        num_data_blocks,
     //        FSSIZE);
 
-    printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d "
+    printf("nmeta %d (boot, super, log blocks per group %u inode blocks per group %u, bitmap blocks per group %u) blocks %d "
            "total %d\n",
            nmeta,
            num_log_blocks,
-           ninodeblocks,
-           nbitmap,
+           ninodeblocks_per_group,
+           nbitmap_per_group,
            num_data_blocks,
            FSSIZE);
 
