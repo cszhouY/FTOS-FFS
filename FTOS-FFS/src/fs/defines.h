@@ -56,6 +56,7 @@ typedef struct {
     u32 num_blocks;  // total number of blocks in filesystem.
     u32 num_log_blocks;  // number of blocks for logging, including log header.
     u32 num_groups; // number of blocks for grouping
+    u32 num_inodes;
     u32 blocks_per_group; // number of blocks in a single block group
 
     u32 log_start;       // the first block of logging area.
@@ -98,4 +99,4 @@ typedef struct {
 } LogHeader;
 
 // mkfs only
-#define FSSIZE 1000 + 2 + LOG_MAX_SIZE  // Size of file system in blocks
+#define FSSIZE 3000 + 2 + LOG_MAX_SIZE  // Size of file system in blocks

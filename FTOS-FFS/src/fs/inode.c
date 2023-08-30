@@ -16,7 +16,11 @@ static Arena arena;
 
 // return which block `inode_no` lives on.
 static INLINE usize to_block_no(usize inode_no) {
-    return sblock->inode_start + (inode_no / (INODE_PER_BLOCK));
+    // (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
+    return sblock->bg_start + sblock->blocks_per_group * 
+            (inode_no / sblock->num_inodeblocks_per_group) + 
+            ((inode_no % sblock->num_inodeblocks_per_group) / 
+            (INODE_PER_BLOCK));
 }
 
 // return the pointer to on-disk inode.
@@ -64,7 +68,7 @@ static void init_inode(Inode *inode) {
 static usize inode_alloc(OpContext *ctx, InodeType type) {
     assert(type != INODE_INVALID);
 
-    for (usize ino = 1; ino < sblock->num_inodes; ino++) {
+    for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
         usize block_no = to_block_no(ino);
         Block *block = cache->acquire(block_no);
         InodeEntry *inode = get_entry(block, ino);
