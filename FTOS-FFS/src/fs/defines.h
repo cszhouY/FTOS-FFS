@@ -30,20 +30,45 @@ typedef u16 InodeType;
 
 #define BIT_PER_BLOCK (BLOCK_SIZE * 8)
 
+
+/* 修改超级块，添加块组相关结构 */
 // disk layout:
 // [ MBR block | super block | log blocks | inode blocks | bitmap blocks | data blocks ]
 //
 // `mkfs` generates the super block and builds an initial filesystem. The
 // super block describes the disk layout.
+// typedef struct {
+//     u32 num_blocks;  // total number of blocks in filesystem.
+//     u32 num_data_blocks;
+//     u32 num_inodes;
+//     u32 num_log_blocks;  // number of blocks for logging, including log header.
+//     u32 log_start;       // the first block of logging area.
+//     u32 inode_start;     // the first block of inode area.
+//     u32 bitmap_start;    // the first block of bitmap area.
+// } SuperBlock;
+
+// FFS disk layout:
+// [ MBR Block | super block | log blocks | block groups ]
+
+// [ inode blocks | bitmap blocks | data blocks | ... | inode blocks | bitmap blocks | data blocks ]
+// \---------------- block group ---------------/
 typedef struct {
     u32 num_blocks;  // total number of blocks in filesystem.
-    u32 num_data_blocks;
-    u32 num_inodes;
     u32 num_log_blocks;  // number of blocks for logging, including log header.
+    u32 num_groups; // number of blocks for grouping
+    u32 blocks_per_group; // number of blocks in a single block group
+
     u32 log_start;       // the first block of logging area.
-    u32 inode_start;     // the first block of inode area.
-    u32 bitmap_start;    // the first block of bitmap area.
+    u32 bg_start;    // the first block of block groups.
+
+    u32 num_inodes_per_group; // number of inode blocks in a single block group
+    u32 num_bitmap_per_group; // number of bitmap blocks in a single block group
+    u32 num_data_per_group; // number of data blocks in a single block group
+    u32 bitmap_start_per_group; // the first block of bitmap blocks in a single block group
+    u32 data_start_per_group; // the first block of data blocks in a single block group
 } SuperBlock;
+/* 修改超级块，添加块组相关结构 */
+
 
 // `type == INODE_INVALID` implies this inode is free.
 typedef struct dinode {

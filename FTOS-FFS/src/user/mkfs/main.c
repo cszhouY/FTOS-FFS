@@ -28,6 +28,8 @@ struct xv6_stat;
     } while (0)
 #endif
 
+
+/* 修改常量 */
 #define NINODES 200
 
 // Disk layout:
@@ -45,6 +47,7 @@ int ninodeblocks = NINODES / IPB + 1;
 int num_log_blocks = LOGSIZE;
 int nmeta;            // Number of meta blocks (boot, sb, num_log_blocks, inode, bitmap)
 int num_data_blocks;  // Number of data blocks
+/* 修改常量 */
 
 int fsfd;
 SuperBlock sb;
@@ -102,17 +105,43 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+
+    /* 修改初始文件系统生成 */
+        /* 修改超级块的初始化过程 */
     // 1 fs block = 1 disk sector
-    nmeta = 2 + num_log_blocks + ninodeblocks + nbitmap;
-    num_data_blocks = FSSIZE - nmeta;
+    // nmeta = 2 + num_log_blocks + ninodeblocks + nbitmap;
+    // num_data_blocks = FSSIZE - nmeta;
+
+    // sb.num_blocks = xint(FSSIZE);
+    // sb.num_data_blocks = xint(num_data_blocks);
+    // sb.num_inodes = xint(NINODES);
+    // sb.num_log_blocks = xint(num_log_blocks);
+    // sb.log_start = xint(2);
+    // sb.inode_start = xint(2 + num_log_blocks);
+    // sb.bitmap_start = xint(2 + num_log_blocks + ninodeblocks);
 
     sb.num_blocks = xint(FSSIZE);
-    sb.num_data_blocks = xint(num_data_blocks);
-    sb.num_inodes = xint(NINODES);
-    sb.num_log_blocks = xint(num_log_blocks);
-    sb.log_start = xint(2);
-    sb.inode_start = xint(2 + num_log_blocks);
-    sb.bitmap_start = xint(2 + num_log_blocks + ninodeblocks);
+    sb.num_log_blocks = xint(num_log_blocks);  
+    sb.num_groups = xint();
+    sb.blocks_per_group = xint(); 
+
+    sb.log_start = xint(2);   
+    sb.bg_start = xint(2 + num_log_blocks);    
+
+    sb.num_inodes_per_group = xint(); 
+    sb.num_bitmap_per_group = xint(); 
+    sb.num_data_per_group = xint(); 
+    sb.bitmap_start_per_group = xint(); 
+    sb.data_start_per_group = xint(); 
+
+    // printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d "
+    //        "total %d\n",
+    //        nmeta,
+    //        num_log_blocks,
+    //        ninodeblocks,
+    //        nbitmap,
+    //        num_data_blocks,
+    //        FSSIZE);
 
     printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d "
            "total %d\n",
@@ -124,27 +153,34 @@ int main(int argc, char *argv[]) {
            FSSIZE);
 
     freeblock = nmeta;  // the first free block that we can allocate
+        /* 修改超级块的初始化过程 */
 
+    // 磁盘内容全部初始化
     for (i = 0; i < FSSIZE; i++)
         wsect(i, zeroes);
 
+    // 将超级块内容写入第二个磁盘块中，跳过MBR块
     memset(buf, 0, sizeof(buf));
     memmove(buf, &sb, sizeof(sb));
     wsect(1, buf);
 
+    // 首先为根目录分配inode，同时保证此inode编号为1
     rootino = ialloc(INODE_DIRECTORY);
     assert(rootino == ROOT_INODE_NO);
 
+    // 初始化当前目录，并将其与rootino关联
     bzero(&de, sizeof(de));
     de.inode_no = xshort(rootino);
     strcpy(de.name, ".");
     iappend(rootino, &de, sizeof(de));
 
+    // 初始化父目录，并将其与rootino关联
     bzero(&de, sizeof(de));
     de.inode_no = xshort(rootino);
     strcpy(de.name, "..");
     iappend(rootino, &de, sizeof(de));
 
+    // 初始化用户进程并将其写入磁盘中
     for (i = 2; i < argc; i++) {
         char *path = argv[i];
         int j = 0;
@@ -190,11 +226,13 @@ int main(int argc, char *argv[]) {
     din.num_bytes = xint(off);
     winode(rootino, &din);
 
+    // 更新位图
     balloc(freeblock);
 
     exit(0);
 }
 
+// 将buf中的数据写入到指定扇区sec中
 void wsect(uint sec, void *buf) {
     if (lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE) {
         perror("lseek");
@@ -206,6 +244,7 @@ void wsect(uint sec, void *buf) {
     }
 }
 
+// 将ip对应的索引数据写入到编号为inum的inode
 void winode(uint inum, struct dinode *ip) {
     char buf[BSIZE];
     uint bn;
@@ -218,6 +257,7 @@ void winode(uint inum, struct dinode *ip) {
     wsect(bn, buf);
 }
 
+// 将编号为inum的inode的索引数据读取到ip中
 void rinode(uint inum, struct dinode *ip) {
     char buf[BSIZE];
     uint bn;
@@ -229,6 +269,7 @@ void rinode(uint inum, struct dinode *ip) {
     *ip = *dip;
 }
 
+// 从指定扇区sec中读取数据到buf
 void rsect(uint sec, void *buf) {
     if (lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE) {
         perror("lseek");
@@ -240,6 +281,7 @@ void rsect(uint sec, void *buf) {
     }
 }
 
+// 分配指定type的inode结点
 uint ialloc(ushort type) {
     uint inum = freeinode++;
     struct dinode din;
@@ -252,6 +294,7 @@ uint ialloc(ushort type) {
     return inum;
 }
 
+// 根据已使用的磁盘块数used修改相应的bitmap
 void balloc(int used) {
     uchar buf[BSIZE];
     int i;
@@ -268,6 +311,7 @@ void balloc(int used) {
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+// 将xp指向的大小为n的数据写入到inode为inum的data块中
 void iappend(uint inum, void *xp, int n) {
     char *p = (char *)xp;
     uint fbn, off, n1;
