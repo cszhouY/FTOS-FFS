@@ -1,2 +1,0 @@
-/usr/bin/ar qc libmock.a CMakeFiles/mock.dir/mock/arena.cpp.o CMakeFiles/mock.dir/mock/core.c.o CMakeFiles/mock.dir/mock/list.cpp.o CMakeFiles/mock.dir/mock/lock.cpp.o CMakeFiles/mock.dir/mock/lock_config.cpp.o CMakeFiles/mock.dir/mock/panic.cpp.o CMakeFiles/mock.dir/mock/rc.cpp.o CMakeFiles/mock.dir/mock/yield.cpp.o
-/usr/bin/ranlib libmock.a

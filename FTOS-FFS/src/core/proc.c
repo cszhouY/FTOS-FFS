@@ -284,7 +284,6 @@ int fork() {
     if (p == 0) {
         return -1;
     }
-
     // uvm copy
     p->pgdir = uvm_copy(thiscpu()->proc->pgdir);
     if (p->pgdir == 0) {
@@ -293,23 +292,19 @@ int fork() {
         p->state = UNUSED;
         return -1;
     }
-
     p->sz = thiscpu()->proc->sz;
     // *(p->tf) = *(thiscpu()->proc->tf);
     memcpy(p->tf, thiscpu()->proc->tf, sizeof(*p->tf));
     p->tf->x[0] = 0;
     p->parent = thiscpu()->proc;
-
     // file descriptor
     for (int i = 0; i < NOFILE; i++) {
         if (thiscpu()->proc->ofile[i]) {
             p->ofile[i] = filedup(thiscpu()->proc->ofile[i]);
         }
     }
-
     p->cwd = inodes.share(thiscpu()->proc->cwd);
     p->state = RUNNABLE;
-
     return p->pid;
 }
 

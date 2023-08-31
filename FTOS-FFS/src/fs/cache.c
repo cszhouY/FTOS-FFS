@@ -328,40 +328,73 @@ static void cache_end_op(OpContext *ctx) {
     }
 }
 
+// static usize cache_alloc(OpContext *ctx) {
+//     for (usize i = 0; i < sblock->num_blocks; i += BIT_PER_BLOCK) {
+//         usize block_no = sblock->bitmap_start + (i / BIT_PER_BLOCK);
+//         Block *block = cache_acquire(block_no);
+
+//         BitmapCell *bitmap = (BitmapCell *)block->data;
+//         for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->num_blocks; j++) {
+//             if (!bitmap_get(bitmap, j)) {
+//                 bitmap_set(bitmap, j);
+//                 cache_sync(ctx, block);
+//                 cache_release(block);
+
+//                 block_no = i + j;
+//                 block = cache_acquire(block_no);
+//                 memset(block->data, 0, BLOCK_SIZE);
+//                 cache_sync(ctx, block);
+//                 cache_release(block);
+//                 return block_no;
+//             }
+//         }
+
+//         cache_release(block);
+//     }
+
+//     PANIC("cache_alloc: no free block");
+// }
+
+
 // see `cache.h`.
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 static usize cache_alloc(OpContext *ctx) {
-    for (usize i = 0; i < sblock->num_blocks; i += BIT_PER_BLOCK) {
-        usize block_no = sblock->bitmap_start + (i / BIT_PER_BLOCK);
-        Block *block = cache_acquire(block_no);
+    for (usize h = 0 ; h < sblock->num_groups; h++) {
+        for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
+            usize block_no = sblock->bg_start + 
+                             sblock->bitmap_start_per_group + h * sblock->blocks_per_group;
+            Block *block = cache_acquire(block_no);
 
-        BitmapCell *bitmap = (BitmapCell *)block->data;
-        for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->num_blocks; j++) {
-            if (!bitmap_get(bitmap, j)) {
-                bitmap_set(bitmap, j);
-                cache_sync(ctx, block);
-                cache_release(block);
+            BitmapCell *bitmap = (BitmapCell *)block->data;
+            for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+                if (!bitmap_get(bitmap, j)) {
+                    bitmap_set(bitmap, j);
+                    cache_sync(ctx, block);
+                    cache_release(block);
 
-                block_no = i + j;
-                block = cache_acquire(block_no);
-                memset(block->data, 0, BLOCK_SIZE);
-                cache_sync(ctx, block);
-                cache_release(block);
-                return block_no;
+                    block_no = sblock->bg_start + h * sblock->blocks_per_group + i + j;
+                    block = cache_acquire(block_no);
+                    memset(block->data, 0, BLOCK_SIZE);
+                    cache_sync(ctx, block);
+                    cache_release(block);
+                    return block_no;
+                }
             }
+
+            cache_release(block);
         }
-
-        cache_release(block);
     }
-
     PANIC("cache_alloc: no free block");
 }
 
 // see `cache.h`.
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 static void cache_free(OpContext *ctx, usize block_no) {
-    usize i = block_no / BIT_PER_BLOCK, j = block_no % BIT_PER_BLOCK;
-    Block *block = cache_acquire(sblock->bitmap_start + i);
+    usize h = (block_no - sblock->bg_start) / sblock->blocks_per_group;
+    usize off = (block_no - sblock->bg_start) % sblock->blocks_per_group;
+    usize i = off / BIT_PER_BLOCK, j = off % BIT_PER_BLOCK;
+    Block *block = cache_acquire(sblock->bg_start + h * sblock->blocks_per_group +
+                                 sblock->bitmap_start_per_group + i);
 
     BitmapCell *bitmap = (BitmapCell *)block->data;
     assert(bitmap_get(bitmap, j));

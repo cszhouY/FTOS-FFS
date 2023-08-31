@@ -1,2 +1,0 @@
-/usr/bin/ar qc libfs.a CMakeFiles/fs.dir/home/user/Desktop/lib14/src/fs/block_device.c.o CMakeFiles/fs.dir/home/user/Desktop/lib14/src/fs/cache.c.o CMakeFiles/fs.dir/home/user/Desktop/lib14/src/fs/file.c.o CMakeFiles/fs.dir/home/user/Desktop/lib14/src/fs/fs.c.o CMakeFiles/fs.dir/home/user/Desktop/lib14/src/fs/inode.c.o CMakeFiles/fs.dir/instrument.c.o
-/usr/bin/ranlib libfs.a
