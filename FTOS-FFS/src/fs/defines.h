@@ -99,4 +99,4 @@ typedef struct {
 } LogHeader;
 
 // mkfs only
-#define FSSIZE 3000 + 2 + LOG_MAX_SIZE  // Size of file system in blocks
+#define FSSIZE 1000 + 2 + LOG_MAX_SIZE  // Size of file system in blocks

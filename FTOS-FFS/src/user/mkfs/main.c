@@ -41,7 +41,7 @@ struct xv6_stat;
 #define NINDIRECT INODE_NUM_INDIRECT
 #define DIRSIZ FILE_NAME_MAX_LENGTH
 #define IPB (BSIZE / sizeof(InodeEntry))
-#define BPG (FSSIZE - 2 - LOGSIZE) / NGROUPS
+#define BPG ((FSSIZE - 2 - LOGSIZE) / NGROUPS)
 #define NIPG (NINODES / NGROUPS)
 #define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
 #define IGROUP(i, sb) ((i - 1) / NIPG)
@@ -433,7 +433,7 @@ void iappend(uint inum, void *xp, int n)
             if (xint(din.addrs[fbn]) == 0)
             {
                 din.addrs[fbn] = xint(freeblock);
-                if (freeblock >= sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
                 {
                     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
                 }
@@ -446,7 +446,7 @@ void iappend(uint inum, void *xp, int n)
             if (xint(din.indirect) == 0)
             {
                 din.indirect = xint(freeblock);
-                if (freeblock >= sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
                 {
                     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
                 }
@@ -456,7 +456,7 @@ void iappend(uint inum, void *xp, int n)
             if (indirect[fbn - NDIRECT] == 0)
             {
                 indirect[fbn - NDIRECT] = xint(freeblock);
-                if (freeblock >= sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
                 {
                     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
                 }
