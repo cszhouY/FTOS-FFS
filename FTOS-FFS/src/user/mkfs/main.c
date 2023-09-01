@@ -35,6 +35,12 @@ struct xv6_stat;
 
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
+
+// FFS disk layout:
+// [ MBR Block | super block | log blocks | block groups ]
+
+// [ inode blocks | bitmap blocks | data blocks | ... | inode blocks | bitmap blocks | data blocks ]
+// \---------------- block group ---------------/
 #define BSIZE BLOCK_SIZE
 #define LOGSIZE LOG_MAX_SIZE
 #define NDIRECT INODE_NUM_DIRECT
@@ -46,6 +52,7 @@ struct xv6_stat;
 #define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
 #define IGROUP(i, sb) ((i - 1) / NIPG)
 #define BGROUP(b, sb) ((b - 2 - LOG_MAX_SIZE) / BPG)
+#define SECTS_PER_BLOCK (BLOCK_SIZE / SECT_SIZE)
 
 int blocks_per_group = BPG;
 int ninodeblocks_per_group = (NINODES / NGROUPS) / IPB + 1;
@@ -69,6 +76,8 @@ void wsect(uint, void *);
 void winode(uint, struct dinode *);
 void rinode(uint inum, struct dinode *ip);
 void rsect(uint sec, void *buf);
+void wblock(uint bnum, void *buf);
+void rblock(uint bnum, void *buf);
 uint ialloc(ushort type);
 void iappend(uint inum, void *p, int n);
 
@@ -157,7 +166,7 @@ int main(int argc, char *argv[])
     //        num_data_blocks,
     //        FSSIZE);
 
-    printf("nmeta %d (boot, super, log blocks per group %u inode blocks per group %u, bitmap blocks per group %u) blocks %d "
+    printf("nmeta %d (boot, super, log blocks %u, inode blocks per group %u, bitmap blocks per group %u) data blocks %d "
            "total %lu\n",
            nmeta,
            num_log_blocks,
@@ -170,13 +179,13 @@ int main(int argc, char *argv[])
     /* 修改超级块的初始化过程 */
 
     // 磁盘内容全部初始化
-    for (i = 0; i < FSSIZE; i++)
+    for (i = 0; i < FSSIZE * SECTS_PER_BLOCK; i++)
         wsect(i, zeroes);
 
-    // 将超级块内容写入第二个磁盘块中，跳过MBR块
+    // 将超级块内容写入第二个块中，跳过MBR
     memset(buf, 0, sizeof(buf));
     memmove(buf, &sb, sizeof(sb));
-    wsect(1, buf);
+    wblock(1, buf);
 
     // 首先为根目录分配inode，同时保证此inode编号为1
     rootino = ialloc(INODE_DIRECTORY);
@@ -252,15 +261,31 @@ int main(int argc, char *argv[])
 // 将buf中的数据写入到指定扇区sec中
 void wsect(uint sec, void *buf)
 {
-    if (lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE)
+    if (lseek(fsfd, sec * SECT_SIZE, 0) != sec * SECT_SIZE)
     {
         perror("lseek");
         exit(1);
     }
-    if (write(fsfd, buf, BSIZE) != BSIZE)
+    if (write(fsfd, buf, SECT_SIZE) != SECT_SIZE)
     {
         perror("write");
         exit(1);
+    }
+}
+
+void rblock(uint bnum, void *buf)
+{
+    int sec;
+    for (sec = 0; sec < SECTS_PER_BLOCK; sec++) {
+        rsect(sec + bnum * SECTS_PER_BLOCK, buf + sec * SECT_SIZE);
+    }
+}
+
+void wblock(uint bnum, void *buf)
+{
+    int sec;
+    for (sec = 0; sec < SECTS_PER_BLOCK; sec++) {
+        wsect(sec + bnum * SECTS_PER_BLOCK, buf + sec * SECT_SIZE);
     }
 }
 
@@ -273,10 +298,10 @@ void winode(uint inum, struct dinode *ip)
 
     bn = IBLOCK(inum, sb);
     // printf("inum %d block %d\n", inum, bn);
-    rsect(bn, buf);
+    rblock(bn, buf);
     dip = ((struct dinode *)buf) + (inum % IPB);
     *dip = *ip;
-    wsect(bn, buf);
+    wblock(bn, buf);
 }
 
 // 将编号为inum的inode的索引数据读取到ip中
@@ -287,7 +312,7 @@ void rinode(uint inum, struct dinode *ip)
     struct dinode *dip;
 
     bn = IBLOCK(inum, sb);
-    rsect(bn, buf);
+    rblock(bn, buf);
     dip = ((struct dinode *)buf) + (inum % IPB);
     *ip = *dip;
 }
@@ -295,12 +320,12 @@ void rinode(uint inum, struct dinode *ip)
 // 从指定扇区sec中读取数据到buf
 void rsect(uint sec, void *buf)
 {
-    if (lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE)
+    if (lseek(fsfd, sec * SECT_SIZE, 0) != sec * SECT_SIZE)
     {
         perror("lseek");
         exit(1);
     }
-    if (read(fsfd, buf, BSIZE) != BSIZE)
+    if (read(fsfd, buf, SECT_SIZE) != SECT_SIZE)
     {
         perror("read");
         exit(1);
@@ -354,7 +379,7 @@ void balloc(int used)
             buf[i / 8] = buf[i / 8] | (0x1 << (i % 8));
         }
         printf("balloc: write bitmap block at sector %lu\n", sb.bg_start + sb.bitmap_start_per_group + gno * BPG);
-        wsect(sb.bg_start + sb.bitmap_start_per_group + gno * BPG, buf);
+        wblock(sb.bg_start + sb.bitmap_start_per_group + gno * BPG, buf);
 
         gno++;
         used -= groupused;
@@ -453,7 +478,7 @@ void iappend(uint inum, void *xp, int n)
                 }
                 freeblock++;
             }
-            rsect(xint(din.indirect), (char *)indirect);
+            rblock(xint(din.indirect), (char *)indirect);
             if (indirect[fbn - NDIRECT] == 0)
             {
                 indirect[fbn - NDIRECT] = xint(freeblock);
@@ -462,14 +487,14 @@ void iappend(uint inum, void *xp, int n)
                     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
                 }
                 freeblock++;
-                wsect(xint(din.indirect), (char *)indirect);
+                wblock(xint(din.indirect), (char *)indirect);
             }
             x = xint(indirect[fbn - NDIRECT]);
         }
         n1 = min(n, (fbn + 1) * BSIZE - off);
-        rsect(x, buf);
+        rblock(x, buf);
         bcopy(p, buf + off - (fbn * BSIZE), n1);
-        wsect(x, buf);
+        wblock(x, buf);
         n -= n1;
         off += n1;
         p += n1;
