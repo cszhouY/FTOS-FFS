@@ -54,7 +54,6 @@ static struct proc *alloc_proc() {
     memset(p->context, 0, sizeof(*(p->context)));
     p->context->lr0 = (u64)forkret;
     p->context->lr = (u64)trap_return;
-
     // other settings
     // p->state = EMBRYO;
     return p;

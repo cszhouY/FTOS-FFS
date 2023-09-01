@@ -17,10 +17,9 @@ static Arena arena;
 // return which block `inode_no` lives on.
 static INLINE usize to_block_no(usize inode_no) {
     // (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
-    return sblock->bg_start + sblock->blocks_per_group * 
-            (inode_no / sblock->num_inodeblocks_per_group) + 
-            ((inode_no % sblock->num_inodeblocks_per_group) / 
-            (INODE_PER_BLOCK));
+    return sblock->bg_start + 
+           sblock->blocks_per_group * (inode_no / (sblock->num_inodes / sblock->num_groups)) + 
+           ((inode_no % (sblock->num_inodes / sblock->num_groups)) / (INODE_PER_BLOCK));
 }
 
 // return the pointer to on-disk inode.
@@ -70,6 +69,7 @@ static usize inode_alloc(OpContext *ctx, InodeType type) {
 
     for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
         usize block_no = to_block_no(ino);
+        // printf("inode %u in block %u\n", ino, block_no);
         Block *block = cache->acquire(block_no);
         InodeEntry *inode = get_entry(block, ino);
 
@@ -258,9 +258,11 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
 
 // see `inode.h`.
 static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {
+    // printf("> in inode_read\n");
     InodeEntry *entry = &inode->entry;
 
     if (inode->entry.type == INODE_DEVICE) {
+        // printf("in inode_read Device\n");
         assert(inode->entry.major == 1);
         return (usize)console_read(inode, (char *)dest, (isize)count);
     }
@@ -272,6 +274,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {
     assert(end <= entry->num_bytes);
     assert(offset <= end);
 
+    // printf("start inode_read\n");
     usize step = 0;
     for (usize begin = offset; begin < end; begin += step, dest += step) {
         bool modified = false;
@@ -284,6 +287,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {
         memmove(dest, block->data + index, step);
         cache->release(block);
     }
+    // printf("& inode_read from inode %u, offset %u, size %d \n", inode->inode_no, offset, count);
     return count;
 }
 
@@ -317,6 +321,8 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
     }
     if (modified)
         inode_sync(ctx, inode, true);
+
+    // printf("inode_write to inode %u, offset %u, size %d \n", inode->inode_no, offset, count);
     return count;
 }
 

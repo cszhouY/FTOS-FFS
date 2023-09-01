@@ -14,6 +14,7 @@
 static uint64_t auxv[][2] = {{AT_PAGESZ, PAGE_SIZE}};
 
 int execve(const char *path, char *const argv[], char *const envp[]) {
+    // printf("current %s\n", path);
     char *s;
     if (fetchstr((uint64_t)path, &s) < 0)
         return -1;
@@ -41,7 +42,10 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
     inodes.lock(ip);
 
     Elf64_Ehdr elf;
+
+    // printf("exec start read elf inode %u\n", ip->inode_no);    
     inodes.read(ip, (u8 *)&elf, 0, sizeof(elf));
+    // printf("exec finish read elf inode %u \n", ip->inode_no);
     if (!(elf.e_ident[EI_MAG0] == ELFMAG0 && elf.e_ident[EI_MAG1] == ELFMAG1 &&
           elf.e_ident[EI_MAG2] == ELFMAG2 && elf.e_ident[EI_MAG3] == ELFMAG3)) {
         // debug("elf header magic invalid");
@@ -65,6 +69,7 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
     int first = 1;
     for (i = 0, off = elf.e_phoff; i < elf.e_phnum; i++, off += sizeof(ph)) {
         inodes.read(ip, (u8 *)&ph, off, sizeof(ph));
+        // printf("exec read elf_ph inode %u \n", ip->inode_no);
 
         if (ph.p_type != PT_LOAD) {
             // debug("unsupported type 0x%x, skipped\n", ph.p_type);
@@ -98,6 +103,7 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
         uvm_switch(pgdir);
 
         inodes.read(ip, (u8 *)ph.p_vaddr, ph.p_offset, ph.p_filesz);
+        // printf("exec read elf_ph_vaddr inode %u \n", ip->inode_no);
         // Initialize BSS.
         memset((void *)ph.p_vaddr + ph.p_filesz, 0, ph.p_memsz - ph.p_filesz);
 

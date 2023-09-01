@@ -272,6 +272,7 @@ void winode(uint inum, struct dinode *ip)
     struct dinode *dip;
 
     bn = IBLOCK(inum, sb);
+    // printf("inum %d block %d\n", inum, bn);
     rsect(bn, buf);
     dip = ((struct dinode *)buf) + (inum % IPB);
     *dip = *ip;
@@ -345,7 +346,7 @@ void balloc(int used)
     while (used > 0)
     {
         groupused = used > sb.num_datablocks_per_group ? sb.num_datablocks_per_group : used;
-        printf("balloc: first %d datablocks in group %d have been allocated\n", sb.num_datablocks_per_group, gno);
+        printf("balloc: first %d datablocks in group %d have been allocated\n", groupused, gno);
         assert(groupused <= sb.num_datablocks_per_group);
         bzero(buf, BSIZE);
         for (i = 0; i < used; i++)
