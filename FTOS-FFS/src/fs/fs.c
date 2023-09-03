@@ -9,6 +9,8 @@ void init_filesystem() {
     // printf("init_block_device finished.\n");
     const SuperBlock *sblock = get_super_block();
     init_bcache(sblock, &block_device);
+    // printf("sblock: %s\n", (char *)sblock);
+    // printf("sblock->num_inodes: %u\n", sblock->num_inodes);
     // printf("init_bcache finished.\n");
     init_inodes(sblock, &bcache);
     // printf("init_inodes finished.\n");

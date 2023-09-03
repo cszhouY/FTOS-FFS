@@ -7,6 +7,7 @@
  */
 
 #define BLOCK_SIZE 512
+#define SECT_SIZE 512
 
 // maximum number of distinct block numbers can be recorded in the log header.
 #define LOG_MAX_SIZE ((BLOCK_SIZE - sizeof(usize)) / sizeof(usize))
