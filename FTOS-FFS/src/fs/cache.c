@@ -5,6 +5,7 @@
 #include <core/physical_memory.h>
 #include <core/proc.h>
 #include <fs/cache.h>
+#include <fs/used_block.h>
 
 static const SuperBlock *sblock;
 static const BlockDevice *device;
@@ -22,6 +23,9 @@ static usize log_size;   // maximum number of blocks that can be recorded in log
 static usize log_used;   // number of log entries reserved/used by uncommitted atomic operations.
 
 static usize op_count;  // number of outstanding atomic operations that are not ended by `end_op`.
+
+// first defined here
+u32 used_block[NGROUPS] = {0};
 
 // read the content from disk.
 static INLINE void device_read(Block *block) {
@@ -358,6 +362,8 @@ static void cache_end_op(OpContext *ctx) {
 
 // see `cache.h`.
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
+
+// 修改：适应FFS文件结构
 static usize cache_alloc(OpContext *ctx) {
     for (usize h = 0 ; h < sblock->num_groups; h++) {
         for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
@@ -377,6 +383,9 @@ static usize cache_alloc(OpContext *ctx) {
                     memset(block->data, 0, BLOCK_SIZE);
                     cache_sync(ctx, block);
                     cache_release(block);
+
+                    used_block[h]++;
+
                     return block_no;
                 }
             }
@@ -385,6 +394,37 @@ static usize cache_alloc(OpContext *ctx) {
         }
     }
     PANIC("cache_alloc: no free block");
+}
+
+// 新增cache_allocg函数，用于在特定块组内分配数据块
+static usize cache_allocg(OpContext *ctx, u32 gno) {
+    for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
+        usize block_no = sblock->bg_start + 
+                            sblock->bitmap_start_per_group + gno * sblock->blocks_per_group;
+        Block *block = cache_acquire(block_no);
+
+        BitmapCell *bitmap = (BitmapCell *)block->data;
+        for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+            if (!bitmap_get(bitmap, j)) {
+                bitmap_set(bitmap, j);
+                cache_sync(ctx, block);
+                cache_release(block);
+
+                block_no = sblock->bg_start + gno * sblock->blocks_per_group + i + j;
+                block = cache_acquire(block_no);
+                memset(block->data, 0, BLOCK_SIZE);
+                cache_sync(ctx, block);
+                cache_release(block);
+
+                used_block[gno]++;
+
+                return block_no;
+            }
+        }
+
+        cache_release(block);
+    }
+    return 0;
 }
 
 // see `cache.h`.
@@ -399,6 +439,7 @@ static void cache_free(OpContext *ctx, usize block_no) {
     BitmapCell *bitmap = (BitmapCell *)block->data;
     assert(bitmap_get(bitmap, j));
     bitmap_clear(bitmap, j);
+    used_block[h]--;
 
     cache_sync(ctx, block);
     cache_release(block);
@@ -412,5 +453,6 @@ BlockCache bcache = {
     .sync = cache_sync,
     .end_op = cache_end_op,
     .alloc = cache_alloc,
+    .allocg = cache_allocg,
     .free = cache_free,
 };

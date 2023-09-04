@@ -3,15 +3,30 @@
 #include <fs/defines.h>
 #include <fs/fs.h>
 #include <fs/inode.h>
+#include <fs/used_block.h>
+#include <common/bitmap.h>
+
+static u8 used_block_data[BLOCK_SIZE];
+extern u32 used_block[NGROUPS];
 
 void init_filesystem() {
     init_block_device();
     // printf("init_block_device finished.\n");
     const SuperBlock *sblock = get_super_block();
     init_bcache(sblock, &block_device);
-    // printf("sblock: %s\n", (char *)sblock);
-    // printf("sblock->num_inodes: %u\n", sblock->num_inodes);
-    // printf("init_bcache finished.\n");
+
+    u32 i, j;
+    for (i = 0; i < NGROUPS; i++) {
+        block_device.read(sblock->bg_start + i * sblock->blocks_per_group + sblock->bitmap_start_per_group, used_block_data);
+        BitmapCell *bitmap = (BitmapCell *)used_block_data;
+        for (j = sblock->data_start_per_group; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
+            if (bitmap_get(bitmap, j))  {
+                used_block[i]++;
+            }
+        }
+        printf("used_block: %u\n", used_block[i]);
+    }
+    printf("init_bcache finished.\n");
     init_inodes(sblock, &bcache);
     // printf("init_inodes finished.\n");
 }

@@ -205,13 +205,24 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
     u32 off;
     Inode *ip, *dp;
     char name[FILE_NAME_MAX_LENGTH] = {0};
+    u32 gno;
+    usize ino;
 
+    // 目录是否存在
     if ((dp = nameiparent(path, name, ctx)) == 0) {
         return 0;
     }
+
+    // 首先判断目标名称的文件是否存在于当前目录中
     inodes.lock(dp);
-    if (inodes.lookup(dp, name, (usize *)&off) != 0) {
-        ip = inodes.get(inodes.lookup(dp, name, (usize *)&off));
+    // 此处要进行修改
+    // 获取父目录的gno，对应type为普通文件的情况
+    gno = ((u32)dp->inode_no - 1) / (NINODES / NGROUPS);
+
+    // 文件名已存在
+    if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
+        // printf("ino: %u\n", inodes.lookup(dp, name, (usize *)&off));
+        ip = inodes.get(ino);
         inodes.unlock(dp);
         inodes.put(ctx, dp);
         inodes.lock(ip);
@@ -222,14 +233,26 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
         inodes.put(ctx, ip);
         return 0;
     }
-    if ((ip = inodes.get(inodes.alloc(ctx, (u16)type))) == 0) {
+
+    // 不存在，分配inode
+    // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
+    // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
+    while(!(ip = inodes.get(inodes.allocg(ctx, (u16)type, gno)))) {
+        gno++;
+    }
+
+    // 无法按组分配inode，改为从头寻找空闲块进行分配
+    if (gno >= NGROUPS && (ip = inodes.get(inodes.alloc(ctx, (u16)type))) == 0) {
         PANIC("create: inodes.alloc");
     }
+
     inodes.lock(ip);
     ip->entry.major = (u16)major;
     ip->entry.minor = (u16)minor;
     ip->entry.num_links = 1;
     inodes.sync(ctx, ip, 1);
+
+    // 对于新建目录的情况，要额外考虑“.”与“..”两个文件
     if (type == INODE_DIRECTORY) {
         dp->entry.num_links++;
         inodes.sync(ctx, dp, 0);

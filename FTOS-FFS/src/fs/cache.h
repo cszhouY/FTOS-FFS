@@ -90,6 +90,8 @@ typedef struct BlockCache {
     // block number is returned.
     usize (*alloc)(OpContext *ctx);
 
+    usize (*allocg)(OpContext *ctx, u32 gno);
+
     // mark block at `block_no` is free in bitmap.
     void (*free)(OpContext *ctx, usize block_no);
 } BlockCache;

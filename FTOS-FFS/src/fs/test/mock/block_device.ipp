@@ -3,7 +3,7 @@
 #include "block_device.hpp"
 
 static MockBlockDevice mock;
-static SuperBlock sblock;
+static const SuperBlock sblock;
 static BlockDevice device;
 
 static void stub_read(usize block_no, u8 *buffer) {

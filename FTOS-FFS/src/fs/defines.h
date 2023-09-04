@@ -6,6 +6,9 @@
  * this file contains on-disk representations of primitives in our filesystem.
  */
 
+/* 修改常量 */
+#define NINODES 200
+#define NGROUPS 10
 #define BLOCK_SIZE 512
 #define SECT_SIZE 512
 
@@ -17,6 +20,8 @@
 #define INODE_PER_BLOCK    (BLOCK_SIZE / sizeof(InodeEntry))
 #define INODE_MAX_BLOCKS   (INODE_NUM_DIRECT + INODE_NUM_INDIRECT)
 #define INODE_MAX_BYTES    (INODE_MAX_BLOCKS * BLOCK_SIZE)
+
+#define SECTS_PER_BLOCK (BLOCK_SIZE / SECT_SIZE)
 
 // the maximum length of file names, including trailing '\0'.
 #define FILE_NAME_MAX_LENGTH 14
@@ -68,9 +73,10 @@ typedef struct {
     u32 num_datablocks_per_group; // number of data blocks in a single block group
     u32 bitmap_start_per_group; // the first block of bitmap blocks in a single block group
     u32 data_start_per_group; // the first block of data blocks in a single block group
+
+    // u32 used_block[NGROUPS]; // number of used block in a single block group
 } SuperBlock;
 /* 修改超级块，添加块组相关结构 */
-
 
 // `type == INODE_INVALID` implies this inode is free.
 typedef struct dinode {

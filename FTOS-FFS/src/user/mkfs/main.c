@@ -29,10 +29,6 @@ struct xv6_stat;
     } while (0)
 #endif
 
-/* 修改常量 */
-#define NINODES 200
-#define NGROUPS 10
-
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
 
@@ -51,8 +47,8 @@ struct xv6_stat;
 #define NIPG (NINODES / NGROUPS)
 #define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
 #define IGROUP(i, sb) ((i - 1) / NIPG)
-#define BGROUP(b, sb) ((b - 2 - LOG_MAX_SIZE) / BPG)
-#define SECTS_PER_BLOCK (BLOCK_SIZE / SECT_SIZE)
+#define BGROUP(b, sb) ((b - 2 - LOG_MAX_SIZE) / BPG) 
+#define NINBLOCKS_PER_GROUP (NINDIRECT / (NGROUPS - 1 ) * 2 + 1)
 
 int blocks_per_group = BPG;
 int ninodeblocks_per_group = (NINODES / NGROUPS) / IPB + 1;
@@ -70,6 +66,7 @@ SuperBlock sb;
 char zeroes[BSIZE];
 uint freeinode = 1;
 uint freeblock;
+uint used_block[NGROUPS];
 
 void balloc(int);
 void wsect(uint, void *);
@@ -80,6 +77,7 @@ void wblock(uint bnum, void *buf);
 void rblock(uint bnum, void *buf);
 uint ialloc(ushort type);
 void iappend(uint inum, void *p, int n);
+void ballocg();
 
 // convert to little-endian byte order
 ushort xshort(ushort x)
@@ -182,7 +180,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < FSSIZE * SECTS_PER_BLOCK; i++)
         wsect(i, zeroes);
 
-    // 将超级块内容写入第二个块中，跳过MBR
+    // 将内容写入超级块
     memset(buf, 0, sizeof(buf));
     memmove(buf, &sb, sizeof(sb));
     wblock(1, buf);
@@ -239,9 +237,12 @@ int main(int argc, char *argv[])
         strncpy(de.name, argv[i], DIRSIZ);
         iappend(rootino, &de, sizeof(de));
 
-        while ((cc = read(fd, buf, sizeof(buf))) > 0)
-            iappend(inum, buf, cc);
+        while ((cc = read(fd, buf, sizeof(buf))) > 0) {
+            iappend(inum, buf, cc);            
+        }
 
+        rinode(xint(inum), &din);
+       
         close(fd);
     }
 
@@ -253,7 +254,7 @@ int main(int argc, char *argv[])
     winode(rootino, &din);
 
     // 更新位图
-    balloc(freeblock);
+    ballocg();
 
     exit(0);
 }
@@ -360,29 +361,28 @@ uint ialloc(ushort type)
 //     printf("balloc: write bitmap block at sector %d\n", sb.bitmap_start);
 //     wsect(sb.bitmap_start, buf);
 // }
-void balloc(int used)
+
+// 修改为直接根据超级块数据进行位图更新
+void ballocg()
 {
     uchar buf[BSIZE];
     int i;
     int groupused;
-    int gno = 0;
+    int gno;
+    int data_start = sb.data_start_per_group;
 
-    used -= sb.data_start_per_group + sb.bg_start;
-    while (used > 0)
+    for (gno = 0; gno < NGROUPS; gno++)
     {
-        groupused = used > sb.num_datablocks_per_group ? sb.num_datablocks_per_group : used;
+        groupused = used_block[gno];
         printf("balloc: first %d datablocks in group %d have been allocated\n", groupused, gno);
         assert(groupused <= sb.num_datablocks_per_group);
         bzero(buf, BSIZE);
-        for (i = 0; i < used; i++)
+        for (i = 0; i < groupused + data_start; i++)
         {
             buf[i / 8] = buf[i / 8] | (0x1 << (i % 8));
         }
         printf("balloc: write bitmap block at sector %lu\n", sb.bg_start + sb.bitmap_start_per_group + gno * BPG);
         wblock(sb.bg_start + sb.bitmap_start_per_group + gno * BPG, buf);
-
-        gno++;
-        used -= groupused;
     }
 }
 
@@ -446,24 +446,33 @@ void iappend(uint inum, void *xp, int n)
     char buf[BSIZE];
     uint indirect[NINDIRECT];
     uint x;
+    uint gno = IGROUP(inum, sb);
 
     rinode(inum, &din);
     off = xint(din.num_bytes);
-    printf("append inum %d at off %d sz %d\n", inum, off, n);
+    printf("append inum %d on group\n", inum);
+
     while (n > 0)
     {
         fbn = off / BSIZE;
         assert(fbn < INODE_MAX_BLOCKS);
+        // 获取默认的freeblock位置
+        while (used_block[gno] == sb.num_datablocks_per_group) 
+            gno = (gno + 1) % NGROUPS;
+        freeblock = sb.bg_start + gno * BPG + sb.data_start_per_group + used_block[gno];
+
         if (fbn < NDIRECT)
         {
             if (xint(din.addrs[fbn]) == 0)
             {
                 din.addrs[fbn] = xint(freeblock);
-                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                {
-                    freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                }
-                freeblock++;
+                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                // {
+                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
+                // }
+                // freeblock++;
+                used_block[gno]++;
+                printf("append direct on group %d at off %d sz %d\n", gno, off, n);
             }
             x = xint(din.addrs[fbn]);
         }
@@ -472,24 +481,36 @@ void iappend(uint inum, void *xp, int n)
             if (xint(din.indirect) == 0)
             {
                 din.indirect = xint(freeblock);
-                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                {
-                    freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                }
-                freeblock++;
+                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                // {
+                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
+                // }
+                // freeblock++;
+                used_block[gno]++;
+                printf("append store block on group %d at off %d sz %d\n", gno, off, n);
             }
             rblock(xint(din.indirect), (char *)indirect);
-            if (indirect[fbn - NDIRECT] == 0)
+
+            
+            uint indirect_no = fbn - NDIRECT;
+            if (indirect[indirect_no] == 0)
             {
-                indirect[fbn - NDIRECT] = xint(freeblock);
-                if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                {
-                    freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                }
-                freeblock++;
+                // 根据间接块的编号获取分散的块所在的块组
+                uint tgno =  (indirect_no / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
+                while (used_block[tgno] == sb.num_datablocks_per_group) 
+                    tgno = (tgno + 2) % NGROUPS;
+                freeblock = sb.bg_start + tgno * BPG + sb.data_start_per_group + used_block[tgno];
+                indirect[indirect_no] = xint(freeblock);
+                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
+                // {
+                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
+                // }
+                // freeblock++;
+                used_block[tgno]++;
+                printf("append indirect block on group %d at off %d sz %d\n", tgno, off, n);
                 wblock(xint(din.indirect), (char *)indirect);
             }
-            x = xint(indirect[fbn - NDIRECT]);
+            x = xint(indirect[indirect_no]);
         }
         n1 = min(n, (fbn + 1) * BSIZE - off);
         rblock(x, buf);

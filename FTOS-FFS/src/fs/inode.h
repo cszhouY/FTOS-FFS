@@ -30,6 +30,8 @@ typedef struct InodeTree {
 
     // allocate a new zero-initialized inode on disk.
     // return a non-zero inode number if allocation succeeds. Otherwise `alloc` panics.
+    usize (*allocg)(OpContext *ctx, InodeType type, u32 gno);
+    
     usize (*alloc)(OpContext *ctx, InodeType type);
 
     // acquire the lock of `inode`.

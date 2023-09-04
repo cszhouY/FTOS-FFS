@@ -4,6 +4,7 @@
 #include <core/physical_memory.h>
 #include <core/sched.h>
 #include <fs/inode.h>
+#include <fs/used_block.h>
 
 // this lock mainly prevents concurrent access to inode list `head`, reference
 // count increment and decrement.
@@ -13,6 +14,11 @@ static ListNode head;
 static const SuperBlock *sblock;
 static const BlockCache *cache;
 static Arena arena;
+
+#define GINODES (sblock->num_inodes / sblock->num_groups)
+#define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)
+
+extern u32 used_block[NGROUPS];
 
 // return which block `inode_no` lives on.
 static INLINE usize to_block_no(usize inode_no) {
@@ -66,7 +72,6 @@ static void init_inode(Inode *inode) {
 // see `inode.h`.
 static usize inode_alloc(OpContext *ctx, InodeType type) {
     assert(type != INODE_INVALID);
-
     for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
         usize block_no = to_block_no(ino);
         // printf("inode %u in block %u\n", ino, block_no);
@@ -83,9 +88,51 @@ static usize inode_alloc(OpContext *ctx, InodeType type) {
 
         cache->release(block);
     }
-
-    PANIC("failed to allocate inode on disk");
+    return 0;
 }
+
+// 修改思路
+// 某一块组中的inode号集中，为了实现以下两点：
+// 新建目录尽量在空闲块组中 && 同一父目录中的文件尽量在同一块组中
+static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
+    assert(type != INODE_INVALID);
+
+    // 针对type为目录的情况，自动调整gno为最空闲的块组编号
+    if (type == INODE_DIRECTORY) {
+        u32 i, used = FSSIZE;
+        for (i = gno; i < NGROUPS; i++) {
+            if(used_block[i] < used) {
+                used = used_block[i];
+                gno = i;
+            }
+        }
+    }
+
+    printf("inode_allog gno: %u\n", gno);
+
+    for (usize ino = 1; ino <= GINODES; ino++) {
+        usize tino = ino + gno * (NINODES / NGROUPS);
+        assert(tino <= NINODES);
+
+        usize block_no = to_block_no(tino);
+        // printf("inode %u in block %u\n", ino, block_no);
+        Block *block = cache->acquire(block_no);
+        InodeEntry *inode = get_entry(block, tino);
+
+        if (inode->type == INODE_INVALID) {
+            memset(inode, 0, sizeof(InodeEntry));
+            inode->type = type;
+            cache->sync(ctx, block);
+            cache->release(block);
+            return tino;
+        }
+
+        cache->release(block);
+    }
+    return 0;
+}
+
+
 
 // see `inode.h`.
 static void inode_sync(OpContext *ctx, Inode *inode, bool do_write) {
@@ -221,13 +268,22 @@ static void inode_put(OpContext *ctx, Inode *inode) {
 // the block number is returned.
 //
 // NOTE: caller must hold the lock of `inode`.
+
+// 修改块分配逻辑，增加块组编号作为分配一依据
 static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modified) {
     InodeEntry *entry = &inode->entry;
     usize index = offset / BLOCK_SIZE;
+    u32 gno = ((u32)inode->inode_no - 1) / (NINODES / NGROUPS);
 
+    // 小文件，可以完全放置在当前块组中，否则按序查找其他块组
     if (index < INODE_NUM_DIRECT) {
         if (entry->addrs[index] == 0) {
-            entry->addrs[index] = (u32)cache->alloc(ctx);
+            while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+                gno++;
+            }
+            if (gno >= NGROUPS) {
+                entry->indirect = (u32)cache->alloc(ctx);
+            } 
             set_flag(modified);
         }
 
@@ -237,16 +293,27 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     index -= INODE_NUM_DIRECT;
     assert(index < INODE_NUM_INDIRECT);
 
+    // 分配间接块索引块，与小文件处理方式一致
     if (entry->indirect == 0) {
-        entry->indirect = (u32)cache->alloc(ctx);
+        while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+            gno++;
+        }
+        if (gno >= NGROUPS) {
+            entry->indirect = (u32)cache->alloc(ctx);
+        } 
         set_flag(modified);
     }
 
     Block *block = cache->acquire(entry->indirect);
     u32 *addrs = get_addrs(block);
 
+    // 需要修改
+    // 分配间接块，需要修改alloc函数
     if (addrs[index] == 0) {
-        addrs[index] = (u32)cache->alloc(ctx);
+        usize tgno =  (index / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
+        while (used_block[tgno] == sblock->num_datablocks_per_group) 
+            tgno = (tgno + 2) % NGROUPS;
+        addrs[index] = (u32)cache->allocg(ctx, (u32)tgno);
         cache->sync(ctx, block);
         set_flag(modified);
     }
@@ -329,6 +396,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
 // see `inode.h`.
 static usize inode_lookup(Inode *inode, const char *name, usize *index) {
     InodeEntry *entry = &inode->entry;
+    // printf("inode %u, name %s, inode_type %u\n", inode->inode_no, name, inode->entry.type);
     assert(entry->type == INODE_DIRECTORY);
 
     DirEntry dentry;
@@ -495,6 +563,7 @@ void stati(Inode *ip, struct stat *st) {
 }
 InodeTree inodes = {
     .alloc = inode_alloc,
+    .allocg = inode_alloc_group, // 修改为inode_alloc_group
     .lock = inode_lock,
     .unlock = inode_unlock,
     .sync = inode_sync,
