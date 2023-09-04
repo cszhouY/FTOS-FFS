@@ -42,13 +42,15 @@ struct xv6_stat;
 #define NDIRECT INODE_NUM_DIRECT
 #define NINDIRECT INODE_NUM_INDIRECT
 #define DIRSIZ FILE_NAME_MAX_LENGTH
+
 #define IPB (BSIZE / sizeof(InodeEntry))
 #define BPG ((FSSIZE - 2 - LOGSIZE) / NGROUPS)
 #define NIPG (NINODES / NGROUPS)
+#define NINBLOCKS_PER_GROUP (NINDIRECT / (NGROUPS - 1 ) * 2 + 1)
+
 #define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
 #define IGROUP(i, sb) ((i - 1) / NIPG)
 #define BGROUP(b, sb) ((b - 2 - LOG_MAX_SIZE) / BPG) 
-#define NINBLOCKS_PER_GROUP (NINDIRECT / (NGROUPS - 1 ) * 2 + 1)
 
 int blocks_per_group = BPG;
 int ninodeblocks_per_group = (NINODES / NGROUPS) / IPB + 1;
@@ -68,7 +70,7 @@ uint freeinode = 1;
 uint freeblock;
 uint used_block[NGROUPS];
 
-void balloc(int);
+// void balloc(int);
 void wsect(uint, void *);
 void winode(uint, struct dinode *);
 void rinode(uint inum, struct dinode *ip);

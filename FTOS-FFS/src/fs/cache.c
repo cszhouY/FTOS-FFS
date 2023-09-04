@@ -368,11 +368,12 @@ static usize cache_alloc(OpContext *ctx) {
     for (usize h = 0 ; h < sblock->num_groups; h++) {
         for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
             usize block_no = sblock->bg_start + 
-                             sblock->bitmap_start_per_group + h * sblock->blocks_per_group;
+                             sblock->bitmap_start_per_group + h * sblock->blocks_per_group +
+                             i / BIT_PER_BLOCK;
             Block *block = cache_acquire(block_no);
 
             BitmapCell *bitmap = (BitmapCell *)block->data;
-            for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+            for (usize j = 0; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
                 if (!bitmap_get(bitmap, j)) {
                     bitmap_set(bitmap, j);
                     cache_sync(ctx, block);
@@ -400,11 +401,12 @@ static usize cache_alloc(OpContext *ctx) {
 static usize cache_allocg(OpContext *ctx, u32 gno) {
     for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
         usize block_no = sblock->bg_start + 
-                            sblock->bitmap_start_per_group + gno * sblock->blocks_per_group;
+                         sblock->bitmap_start_per_group + gno * sblock->blocks_per_group +
+                         i / BIT_PER_BLOCK;
         Block *block = cache_acquire(block_no);
 
         BitmapCell *bitmap = (BitmapCell *)block->data;
-        for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+        for (usize j = 0; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
             if (!bitmap_get(bitmap, j)) {
                 bitmap_set(bitmap, j);
                 cache_sync(ctx, block);
