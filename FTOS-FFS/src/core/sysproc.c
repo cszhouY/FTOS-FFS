@@ -1,6 +1,4 @@
 #include <stdint.h>
-#include <clock.h>
-
 #include <core/proc.h>
 #include <core/sched.h>
 #include <core/syscall.h>

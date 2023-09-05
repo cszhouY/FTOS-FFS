@@ -68,7 +68,7 @@ SuperBlock sb;
 char zeroes[BSIZE];
 uint freeinode = 1;
 uint freeblock;
-uint used_block[NGROUPS];
+uint used_block[NGROUPS] = {0};
 
 // void balloc(int);
 void wsect(uint, void *);
@@ -364,26 +364,32 @@ uint ialloc(ushort type)
 //     wsect(sb.bitmap_start, buf);
 // }
 
-// 修改为直接根据超级块数据进行位图更新
+// 直接根据used_block数组进行更新，因此移除了参数
 void ballocg()
 {
     uchar buf[BSIZE];
     int i;
+    // 当前组内已使用数据块数
     int groupused;
+    // 块组编号
     int gno;
+    // 块组内偏移
     int data_start = sb.data_start_per_group;
 
+    // 遍历used_block数组，依次更新相应块组内的位图
     for (gno = 0; gno < NGROUPS; gno++)
     {
         groupused = used_block[gno];
         printf("balloc: first %d datablocks in group %d have been allocated\n", groupused, gno);
         assert(groupused <= sb.num_datablocks_per_group);
         bzero(buf, BSIZE);
+        // 位图更新逻辑
         for (i = 0; i < groupused + data_start; i++)
         {
             buf[i / 8] = buf[i / 8] | (0x1 << (i % 8));
         }
         printf("balloc: write bitmap block at sector %lu\n", sb.bg_start + sb.bitmap_start_per_group + gno * BPG);
+        // 将更新后的位图数据写回位图块中
         wblock(sb.bg_start + sb.bitmap_start_per_group + gno * BPG, buf);
     }
 }
@@ -443,85 +449,113 @@ void ballocg()
 void iappend(uint inum, void *xp, int n)
 {
     char *p = (char *)xp;
+    // 当前inode内下一未分配数据块编号、数据偏移以及实际写入字节
     uint fbn, off, n1;
+    // 临时磁盘inode结构
     struct dinode din;
+    // 缓冲区
     char buf[BSIZE];
+    // 间接块数组
     uint indirect[NINDIRECT];
+    // 单次分配数据块的编号
     uint x;
+    // 获取inode所在的组号
     uint gno = IGROUP(inum, sb);
 
+    // 根据编号读取inode，获得文件偏移，即当前文件大小，
     rinode(inum, &din);
     off = xint(din.num_bytes);
     printf("append inum %d on group\n", inum);
 
+    // 循环写入数据
     while (n > 0)
     {
+        // 根据偏移获取当前inode内待分配的数据块编号
         fbn = off / BSIZE;
         assert(fbn < INODE_MAX_BLOCKS);
+
         // 获取默认的freeblock位置
+
+        // 数据块优先考虑分配在当前块组中
+        // 如果当前块组数据块已完全分配，则寻找下一个块组
+        // 考虑到初始化操作，一般不会出现无法分配的问题
         while (used_block[gno] == sb.num_datablocks_per_group) 
             gno = (gno + 1) % NGROUPS;
+        // 确定待分配组后确定组内待分配数据块，由used_block确定下一个可分配块
         freeblock = sb.bg_start + gno * BPG + sb.data_start_per_group + used_block[gno];
 
+        // inode对应的直接块未完全分配
         if (fbn < NDIRECT)
         {
+            // 直接分配到当前块组中
             if (xint(din.addrs[fbn]) == 0)
             {
                 din.addrs[fbn] = xint(freeblock);
-                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                // {
-                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                // }
-                // freeblock++;
                 used_block[gno]++;
                 printf("append direct on group %d at off %d sz %d\n", gno, off, n);
             }
             x = xint(din.addrs[fbn]);
         }
+        // 直接块已完全分配，考虑使用间接块
         else
         {
+            // 间接索引块未分配，首先在当前块组中分配索引块
             if (xint(din.indirect) == 0)
             {
                 din.indirect = xint(freeblock);
-                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                // {
-                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                // }
-                // freeblock++;
                 used_block[gno]++;
                 printf("append store block on group %d at off %d sz %d\n", gno, off, n);
             }
             rblock(xint(din.indirect), (char *)indirect);
 
-            
+            // 计算待分配的间接块编号
             uint indirect_no = fbn - NDIRECT;
             if (indirect[indirect_no] == 0)
             {
+                // 这里考虑到大文件的分配逻辑，将间接块划分到不同的块组中
+                // 从inode所在的块组开始，后续每一个块组分配一定数目的间接块
                 // 根据间接块的编号获取分散的块所在的块组
+
+                // 首先定位到后续第一个块组
                 uint tgno =  (indirect_no / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
-                while (used_block[tgno] == sb.num_datablocks_per_group) 
-                    tgno = (tgno + 2) % NGROUPS;
+                // 块组跨度默认为2
+                uint step = 2;
+                // 从后续第一个块组开始，以step为跨度寻找空闲块
+                while (used_block[tgno] == sb.num_datablocks_per_group) {
+                    tgno = tgno + step;
+                    // 遍历到了块组末尾，这时考虑减小跨度从头开始重新分配
+                    if (tgno >= NGROUPS) {
+                        tgno = 0;
+                        step = 1;
+                    }
+                    // 没有空闲块可用，直接退出
+                    if (step == 1 && tgno >= NGROUPS) {
+                        break;
+                    }
+                }
+
+                // 确定了待分配块编号
                 freeblock = sb.bg_start + tgno * BPG + sb.data_start_per_group + used_block[tgno];
                 indirect[indirect_no] = xint(freeblock);
-                // if (freeblock == sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG - 1)
-                // {
-                //     freeblock = sb.bg_start + (BGROUP(freeblock, sb) + 1) * BPG + sb.data_start_per_group;
-                // }
-                // freeblock++;
                 used_block[tgno]++;
                 printf("append indirect block on group %d at off %d sz %d\n", tgno, off, n);
+                // 同时需要修改间接索引块
                 wblock(xint(din.indirect), (char *)indirect);
             }
             x = xint(indirect[indirect_no]);
         }
+        // 确定此次写入的数据大小
         n1 = min(n, (fbn + 1) * BSIZE - off);
+        // 写回数据
         rblock(x, buf);
         bcopy(p, buf + off - (fbn * BSIZE), n1);
         wblock(x, buf);
+        // 更新相应参数
         n -= n1;
         off += n1;
         p += n1;
     }
+    // 更新磁盘inode中的文件大小属性
     din.num_bytes = xint(off);
     winode(inum, &din);
-}
+}    

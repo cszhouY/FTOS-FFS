@@ -23,7 +23,7 @@ void init_filesystem() {
                               sblock->bitmap_start_per_group +
                               i / BIT_PER_BLOCK, used_block_data);
             BitmapCell *bitmap = (BitmapCell *)used_block_data;
-            for (j = sblock->data_start_per_group; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
+            for (j = sblock->data_start_per_group; i + j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
                 if (bitmap_get(bitmap, j))  {
                     used_block[h]++;
                 }
