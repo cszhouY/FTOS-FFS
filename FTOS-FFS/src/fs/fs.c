@@ -15,18 +15,23 @@ void init_filesystem() {
     const SuperBlock *sblock = get_super_block();
     init_bcache(sblock, &block_device);
 
-    u32 i, j;
-    for (i = 0; i < NGROUPS; i++) {
-        block_device.read(sblock->bg_start + i * sblock->blocks_per_group + sblock->bitmap_start_per_group, used_block_data);
-        BitmapCell *bitmap = (BitmapCell *)used_block_data;
-        for (j = sblock->data_start_per_group; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
-            if (bitmap_get(bitmap, j))  {
-                used_block[i]++;
+    u32 i, j, h;
+    for (h = 0; h < NGROUPS; h++) {
+        for (i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
+            block_device.read(sblock->bg_start + 
+                              h * sblock->blocks_per_group + 
+                              sblock->bitmap_start_per_group +
+                              i / BIT_PER_BLOCK, used_block_data);
+            BitmapCell *bitmap = (BitmapCell *)used_block_data;
+            for (j = sblock->data_start_per_group; i + j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
+                if (bitmap_get(bitmap, j))  {
+                    used_block[h]++;
+                }
             }
         }
-        printf("used_block: %u\n", used_block[i]);
+        // printf("used_block: %u\n", used_block[h]);
     }
-    printf("init_bcache finished.\n");
+    // printf("init_bcache finished.\n");
     init_inodes(sblock, &bcache);
     // printf("init_inodes finished.\n");
 }

@@ -364,15 +364,26 @@ static void cache_end_op(OpContext *ctx) {
 // hint: you can use `cache_acquire`/`cache_sync` to read/write blocks.
 
 // 修改：适应FFS文件结构
+// cache_alloc映射到alloc函数
+// 功能为从前往后遍历，找到第一个空闲的数据块并返回块编号
 static usize cache_alloc(OpContext *ctx) {
+    // 修改后的alloc函数新增了块组编号这一层循环
     for (usize h = 0 ; h < sblock->num_groups; h++) {
         for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
+            // 由于新增了块组编号，块编号的计算方式也需要更新
+            // 任一块组位图块编号 = 块组起始 + 块组偏移块数 + 块组内位图起始 + 位图块偏移
             usize block_no = sblock->bg_start + 
-                             sblock->bitmap_start_per_group + h * sblock->blocks_per_group;
+                            h * sblock->blocks_per_group +
+                            sblock->bitmap_start_per_group + 
+                            i / BIT_PER_BLOCK;
             Block *block = cache_acquire(block_no);
 
+            // 读取位图块信息后转化为BitmapCell数据结构
+            // 便于后续处理
             BitmapCell *bitmap = (BitmapCell *)block->data;
+            // 遍历位图的每一位
             for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+                // 由于是顺序分配，因此找到第一个空闲位图则返回相应的块编号
                 if (!bitmap_get(bitmap, j)) {
                     bitmap_set(bitmap, j);
                     cache_sync(ctx, block);
@@ -384,6 +395,7 @@ static usize cache_alloc(OpContext *ctx) {
                     cache_sync(ctx, block);
                     cache_release(block);
 
+                    // 一旦新分配了一个数据块，更新块组的数据块使用信息
                     used_block[h]++;
 
                     return block_no;
@@ -398,13 +410,15 @@ static usize cache_alloc(OpContext *ctx) {
 
 // 新增cache_allocg函数，用于在特定块组内分配数据块
 static usize cache_allocg(OpContext *ctx, u32 gno) {
+    assert(gno < NGROUPS);
     for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
         usize block_no = sblock->bg_start + 
-                            sblock->bitmap_start_per_group + gno * sblock->blocks_per_group;
+                         sblock->bitmap_start_per_group + gno * sblock->blocks_per_group +
+                         i / BIT_PER_BLOCK;
         Block *block = cache_acquire(block_no);
 
         BitmapCell *bitmap = (BitmapCell *)block->data;
-        for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->blocks_per_group; j++) {
+        for (usize j = 0; j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
             if (!bitmap_get(bitmap, j)) {
                 bitmap_set(bitmap, j);
                 cache_sync(ctx, block);

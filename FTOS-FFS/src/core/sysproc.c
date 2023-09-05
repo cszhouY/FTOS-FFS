@@ -1,5 +1,4 @@
 #include <stdint.h>
-
 #include <core/proc.h>
 #include <core/sched.h>
 #include <core/syscall.h>
@@ -57,4 +56,9 @@ int sys_wait4() {
 
 int sys_exit() {
     exit();
+}
+
+
+int sys_ctime() {
+    ;
 }

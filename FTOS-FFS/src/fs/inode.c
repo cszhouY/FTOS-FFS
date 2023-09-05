@@ -311,8 +311,18 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     // 分配间接块，需要修改alloc函数
     if (addrs[index] == 0) {
         usize tgno =  (index / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
-        while (used_block[tgno] == sblock->num_datablocks_per_group) 
-            tgno = (tgno + 2) % NGROUPS;
+        usize step = 2;
+        while (used_block[tgno] == sblock->num_datablocks_per_group) {
+            tgno = tgno + step;
+            if (tgno >= NGROUPS) {
+                tgno = 0;
+                step = 1;
+            }
+            if (step == 1 && tgno >= NGROUPS) {
+                break;
+            }
+        }
+
         addrs[index] = (u32)cache->allocg(ctx, (u32)tgno);
         cache->sync(ctx, block);
         set_flag(modified);
