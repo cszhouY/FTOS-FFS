@@ -15,17 +15,22 @@ static const SuperBlock *sblock;
 static const BlockCache *cache;
 static Arena arena;
 
+// 每个块组中的最大inode数目
 #define GINODES (sblock->num_inodes / sblock->num_groups)
-#define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)
+// 每个inode可在单个块组中分配的间接块数目，主要用于大文件处理
+// 本实验中大文件的定义为超出了直接块数目
+// 这里的分块数目算法核心是间隔分组，因此会有一个乘2的操作
+#define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)  
 
 extern u32 used_block[NGROUPS];
 
 // return which block `inode_no` lives on.
 static INLINE usize to_block_no(usize inode_no) {
-    // (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
+    // inode所在的块编号 = 
+    //      块组起始位置 + 块组偏移 + inode块组内偏移
     return sblock->bg_start + 
-           sblock->blocks_per_group * (inode_no / (sblock->num_inodes / sblock->num_groups)) + 
-           ((inode_no % (sblock->num_inodes / sblock->num_groups)) / (INODE_PER_BLOCK));
+            sblock->blocks_per_group * (inode_no / GINODES) + 
+            ((inode_no % GINODES) / (INODE_PER_BLOCK));
 }
 
 // return the pointer to on-disk inode.
@@ -98,10 +103,12 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
     assert(type != INODE_INVALID);
 
     // 针对type为目录的情况，自动调整gno为最空闲的块组编号
+    // 否则直接在编号为gno的块组中分配inode
     if (type == INODE_DIRECTORY) {
         u32 i, used = FSSIZE;
-        for (i = gno; i < NGROUPS; i++) {
-            if(used_block[i] < used) {
+        // 遍历所有块组，通过used_block信息获取最空闲的块组编号
+        for (i = 0; i < NGROUPS; i++) {
+            if (used_block[i] < used) {
                 used = used_block[i];
                 gno = i;
             }
@@ -110,15 +117,20 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
 
     printf("inode_allog gno: %u\n", gno);
 
+    // ino的含义变为某一块组内相对的inode编号
+    // ino在块组内顺序分配
     for (usize ino = 1; ino <= GINODES; ino++) {
+        // tino为换算后的实际inode编号
         usize tino = ino + gno * (NINODES / NGROUPS);
         assert(tino <= NINODES);
 
+        // 获取待分配的inode所在的块编号
         usize block_no = to_block_no(tino);
         // printf("inode %u in block %u\n", ino, block_no);
         Block *block = cache->acquire(block_no);
         InodeEntry *inode = get_entry(block, tino);
 
+        // 找到空闲inode，进行分配并返回此inode编号
         if (inode->type == INODE_INVALID) {
             memset(inode, 0, sizeof(InodeEntry));
             inode->type = type;
@@ -129,8 +141,9 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
 
         cache->release(block);
     }
+    // 这里表明分配失败
     return 0;
-}
+}  
 
 
 
@@ -269,18 +282,22 @@ static void inode_put(OpContext *ctx, Inode *inode) {
 //
 // NOTE: caller must hold the lock of `inode`.
 
-// 修改块分配逻辑，增加块组编号作为分配一依据
+// 修改块分配逻辑，增加块组编号作为分配依据
 static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modified) {
     InodeEntry *entry = &inode->entry;
     usize index = offset / BLOCK_SIZE;
+
+    // 获取当前inode所在块组编号
     u32 gno = ((u32)inode->inode_no - 1) / (NINODES / NGROUPS);
 
     // 小文件，可以完全放置在当前块组中，否则按序查找其他块组
     if (index < INODE_NUM_DIRECT) {
         if (entry->addrs[index] == 0) {
+            // 从父目录块组开始顺序寻找可分配块组
             while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
                 gno++;
             }
+            // 否则使用默认alloc函数进行分配
             if (gno >= NGROUPS) {
                 entry->indirect = (u32)cache->alloc(ctx);
             } 
@@ -307,17 +324,20 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     Block *block = cache->acquire(entry->indirect);
     u32 *addrs = get_addrs(block);
 
-    // 需要修改
-    // 分配间接块，需要修改alloc函数
+    // 分配间接块，分配逻辑与mkfs中初始用户程序的分配方式类似
     if (addrs[index] == 0) {
+        // 根据间接块编号获取目标块组，默认为下一块组
         usize tgno =  (index / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
         usize step = 2;
+        // 优先间隔分配
         while (used_block[tgno] == sblock->num_datablocks_per_group) {
             tgno = tgno + step;
+            // 如果间隔分配到达块组尾，则从头开始按相邻块组进行分配
             if (tgno >= NGROUPS) {
                 tgno = 0;
                 step = 1;
             }
+            // 无法分配块组，直接跳出，交给allocg函数处理异常
             if (step == 1 && tgno >= NGROUPS) {
                 break;
             }
@@ -331,7 +351,7 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     usize addr = addrs[index];
     cache->release(block);
     return addr;
-}
+}   
 
 // see `inode.h`.
 static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {

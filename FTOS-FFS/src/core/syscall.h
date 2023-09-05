@@ -27,7 +27,6 @@ int sys_mkdirat();
 int sys_mknodat();
 int sys_chdir();
 int sys_exec();
-int sys_ctime();
 
 int in_user(void *s, usize n);
 int fetchstr(u64 addr, char **pp);

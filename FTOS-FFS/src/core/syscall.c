@@ -53,8 +53,7 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
                                       [SYS_read] = (int (*)())sys_read,
                                       [SYS_write] = (int (*)())sys_write,
                                       [SYS_close] = sys_close,
-                                      [SYS_myyield] = sys_yield,
-                                      [SYS_clock_gettime] = sys_ctime};
+                                      [SYS_myyield] = sys_yield};
 
 const char(*syscall_table_str[NR_SYSCALL]) = {[0 ... NR_SYSCALL - 1] = "sys_default",
                                               [SYS_set_tid_address] = "sys_gettid",
@@ -80,7 +79,7 @@ const char(*syscall_table_str[NR_SYSCALL]) = {[0 ... NR_SYSCALL - 1] = "sys_defa
                                               [SYS_write] = "sys_write",
                                               [SYS_close] = "sys_close",
                                               [SYS_myyield] = "sys_yield",
-                                              [SYS_clock_gettime] = "sys_ctime"};
+                                              [SYS_times] = "sys_times"};
 
 u64 syscall_dispatch(Trapframe *frame) {
     // switch (frame->x[8]) {

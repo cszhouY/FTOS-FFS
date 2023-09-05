@@ -57,8 +57,3 @@ int sys_wait4() {
 int sys_exit() {
     exit();
 }
-
-
-int sys_ctime() {
-    ;
-}

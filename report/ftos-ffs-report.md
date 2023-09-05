@@ -13,16 +13,16 @@
 
 快速文件系统
 
-### shell
+### Shell
 
-shell
+Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行进行交互。
+本实验的终端来源于xv6
 
 ## 实验内容
 
 ### 实现块组磁盘结构
 
-* 主要修改文件：`src/fs/defines.h`、`src/user/mkfs/main.c`、`src/fs/cache.c`、`src/fs/inode.c`、`fs/fs.c`
-* 新增文件：`fs/used_block.h`
+* 主要修改文件：`src/fs/defines.h`、`src/user/mkfs/main.c`、`src/fs/cache.c`、`src/fs/inode.c`
 * 修改说明：
 
     1. 修改 `fs/defines.h` 中的超级块结构，新的超级块结构如下所示：
@@ -379,83 +379,9 @@ shell
             ballocg();
             ```
 
-    6. 修改`fs/fs.c`中相关数据定义，如下所示：
+        > **至此，mkfs可以生成基于块组的磁盘结构，之后还需要调整inode、cache等相关函数以适应块组文件结构**
 
-        ```c
-        // 用于临时存储位图
-        static u8 used_block_data[BLOCK_SIZE];
-        // 共享used_block数组，fs中主要是根据位图初始化used_block
-        extern u32 used_block[NGROUPS];
-        ```
-
-    7. 修改`fs/fs.c`中主体函数，如下所示：
-
-        ```c
-        void init_filesystem() {
-            init_block_device();
-            // printf("init_block_device finished.\n");
-            const SuperBlock *sblock = get_super_block();
-            init_bcache(sblock, &block_device);
-
-            // 初始化块设备与cache完成
-            // 根据超级块内信息读取相应bitmap并更新used_block
-            u32 i, j, h;
-            for (h = 0; h < NGROUPS; h++) {
-                for (i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
-                    // 调用块设备的read函数读取位图信息
-                    block_device.read(sblock->bg_start + 
-                                    h * sblock->blocks_per_group + 
-                                    sblock->bitmap_start_per_group +
-                                    i / BIT_PER_BLOCK, used_block_data);
-                    // 转为BitmapCell结构
-                    BitmapCell *bitmap = (BitmapCell *)used_block_data;
-                    for (j = sblock->data_start_per_group; i + j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
-                        // 遍历位图，更新数据块使用数目
-                        if (bitmap_get(bitmap, j))  {
-                            used_block[h]++;
-                        }
-                    }
-                }
-                // printf("used_block: %u\n", used_block[h]);
-            }
-            // printf("init_bcache finished.\n");
-            init_inodes(sblock, &bcache);
-            // printf("init_inodes finished.\n");
-        }        
-        ```
-
-        > 至此，mkfs可以生成基于块组的磁盘结构，之后还需要调整inode、cache等相关函数以适应块组文件结构
-
-    8. 修改`fs/cache.h`中**BlockCache**结构，代码如下所示：
-
-        ```c
-        // 新增allocg函数指针定义，功能为在特定组中分配数据块
-        usize (*allocg)(OpContext *ctx, u32 gno);
-        ```
-
-    9. 新增`fs/used_block.h`，代码如下所示：
-
-        ```c
-        #ifndef USED_BLOCK_H
-        #define USED_BLOCK_H
-
-        #define u32 unsigned int
-
-        // 考虑到多文件链接操作，实际的used_block定义位于cache.c中
-        extern u32 used_block[NGROUPS];
-
-        #endif
-        ```
-
-    10. 修改`fs/cache.c`中相关变量定义，代码如下所示：
-
-        ```c
-        // 新增used_block数据，主要作用域为fs.c、cache.c以及inode.c
-        // 在cache.c中进行定义，通过used_block.h进行共享
-        u32 used_block[NGROUPS] = {0};
-        ```
-
-    11. 修改`fs/cache.c`中相关函数定义
+    6. 修改`fs/cache.c`中相关函数定义
 
         * 修改cache_alloc函数，以适应块组结构，代码如下所示：
 
@@ -505,6 +431,119 @@ shell
             }
             ```
 
+    7. 修改`fs/inode.c`中相关宏定义，如下所示：
+
+        ```c
+        // 新增以下宏定义
+        // 每个块组中的inode数目
+        #define GINODES (sblock->num_inodes / sblock->num_groups)  
+        ```
+
+    8. 修改`fs/inode.c`中相关函数定义，如下所示：
+
+        * 修改通过inode编号获取块编号的内联函数，代码如下所示：
+
+            ```c
+            static INLINE usize to_block_no(usize inode_no) {
+                // inode所在的块编号 = 
+                //      块组起始位置 + 块组偏移 + inode块组内偏移
+                return sblock->bg_start + 
+                       sblock->blocks_per_group * (inode_no / GINODES) + 
+                       ((inode_no % GINODES) / (INODE_PER_BLOCK));
+            }
+            ```
+
+        > 至此，基于块组的磁盘结构基本改写完成，系统可以正常运行
+
+* 总结
+
+    块组磁盘结构的修改可以分为两部分：**初始磁盘结构生成**与**文件系统结构支持**，其中mkfs部分的修改侧重于前者，而inode、cache等相关文件则是侧重于后者。
+
+### 实现文件/目录放置策略
+
+* 主要修改文件：`src/fs/cache.c`、`src/fs/inode.c`、`src/core/sysfile.c`、`src/fs/fs/c`
+* 新增文件：`fs/used_block.h`
+* 修改说明：
+
+    1. 新增`fs/used_block.h`，代码如下所示：
+
+        ```c
+        #ifndef USED_BLOCK_H
+        #define USED_BLOCK_H
+
+        #define u32 unsigned int
+
+        // used_block功能类似mkfs中的同名变量
+        // 主要用于统计各块组内已使用数据块数目
+        // 考虑到多文件链接操作，实际的used_block定义位于cache.c中
+        extern u32 used_block[NGROUPS];
+
+        #endif
+        ```
+
+    2. 修改`fs/fs.c`中相关数据定义，如下所示：
+
+        ```c
+        // 用于临时存储位图
+        static u8 used_block_data[BLOCK_SIZE];
+        // 共享used_block数组，fs中主要是根据位图初始化used_block
+        extern u32 used_block[NGROUPS];
+        ```
+
+    3. 修改`fs/fs.c`中主体函数，如下所示：
+
+        ```c
+        void init_filesystem() {
+            init_block_device();
+            // printf("init_block_device finished.\n");
+            const SuperBlock *sblock = get_super_block();
+            init_bcache(sblock, &block_device);
+
+            // 初始化块设备与cache完成
+            // 根据超级块内信息读取相应bitmap并更新used_block
+            u32 i, j, h;
+            for (h = 0; h < NGROUPS; h++) {
+                for (i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
+                    // 调用块设备的read函数读取位图信息
+                    block_device.read(sblock->bg_start + 
+                                    h * sblock->blocks_per_group + 
+                                    sblock->bitmap_start_per_group +
+                                    i / BIT_PER_BLOCK, used_block_data);
+                    // 转为BitmapCell结构
+                    BitmapCell *bitmap = (BitmapCell *)used_block_data;
+                    for (j = sblock->data_start_per_group; i + j < BIT_PER_BLOCK && j < sblock->blocks_per_group; j++) {
+                        // 遍历位图，更新数据块使用数目
+                        if (bitmap_get(bitmap, j))  {
+                            used_block[h]++;
+                        }
+                    }
+                }
+                // printf("used_block: %u\n", used_block[h]);
+            }
+            // printf("init_bcache finished.\n");
+            init_inodes(sblock, &bcache);
+            // printf("init_inodes finished.\n");
+        }        
+        ```
+
+    4. 修改`fs/cache.h`中**BlockCache**结构，代码如下所示：
+
+        ```c
+        // 新增allocg函数指针定义，功能为在特定组中分配数据块
+        usize (*allocg)(OpContext *ctx, u32 gno);
+        ```
+
+    5. 修改`fs/cache.c`中相关变量定义，代码如下所示：
+
+        ```c
+        // 新增used_block数据，主要作用域为fs.c、cache.c以及inode.c
+        // 在cache.c中进行定义，通过used_block.h进行共享
+        // cache.c中主要用于在文件系统运行实时更新块组使用情况
+        u32 used_block[NGROUPS] = {0};
+        ```
+
+    6. 修改`fs/cache.c`中相关函数定义
+
         * 新增cache_allocg函数，在特定组内分配数据块，代码如下所示：
 
             ```c
@@ -546,7 +585,7 @@ shell
             }            
             ```
 
-    12. 修改`fs/cache.c`中初始化操作，代码如下所示：
+    7. 修改`fs/cache.c`中初始化操作，代码如下所示：
 
         ```c
         // 初始化bcache结构
@@ -564,21 +603,275 @@ shell
         };
         ```
 
-    13. 修改`fs/inode.h`中**InodeTree**结构，代码如下所示：
+    8. 修改`fs/inode.h`中**InodeTree**结构，代码如下所示：
 
         ```c
-
+        // 新增allocg函数指针，用于在特定块组中分配指定类型的inode
+        usize (*allocg)(OpContext *ctx, InodeType type, u32 gno);
         ```
 
-### 实现文件/目录放置策略
+    9. 修改`fs/inode.c`中相关变量定义，如下所示：
 
-* 主要修改文件
-* 修改说明
+        ```c
+        // 与cache.c和fs.c共享used_block变量
+        // inode.c中主要功能是供inode_alloc_group判断块组空闲情况
+        extern u32 used_block[NGROUPS];
+        ```
+
+    10. 修改`fs/inode.c`中相关函数定义，如下所示：
+
+        * 新增inode_alloc_group函数，用于在特定块组内分配inode，代码如下所示：
+
+            ```c
+            static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
+                assert(type != INODE_INVALID);
+
+                // 针对type为目录的情况，自动调整gno为最空闲的块组编号
+                // 否则直接在编号为gno的块组中分配inode
+                if (type == INODE_DIRECTORY) {
+                    u32 i, used = FSSIZE;
+                    // 遍历所有块组，通过used_block信息获取最空闲的块组编号
+                    for (i = 0; i < NGROUPS; i++) {
+                        if (used_block[i] < used) {
+                            used = used_block[i];
+                            gno = i;
+                        }
+                    }
+                }
+
+                printf("inode_allog gno: %u\n", gno);
+
+                // ino的含义变为某一块组内相对的inode编号
+                // ino在块组内顺序分配
+                for (usize ino = 1; ino <= GINODES; ino++) {
+                    // tino为换算后的实际inode编号
+                    usize tino = ino + gno * (NINODES / NGROUPS);
+                    assert(tino <= NINODES);
+
+                    // 获取待分配的inode所在的块编号
+                    usize block_no = to_block_no(tino);
+                    // printf("inode %u in block %u\n", ino, block_no);
+                    Block *block = cache->acquire(block_no);
+                    InodeEntry *inode = get_entry(block, tino);
+
+                    // 找到空闲inode，进行分配并返回此inode编号
+                    if (inode->type == INODE_INVALID) {
+                        memset(inode, 0, sizeof(InodeEntry));
+                        inode->type = type;
+                        cache->sync(ctx, block);
+                        cache->release(block);
+                        return tino;
+                    }
+
+                    cache->release(block);
+                }
+                // 这里表明分配失败
+                return 0;
+            }            
+            ```
+
+    11. 修改`fs/inode.c`中初始化操作，代码如下所示：
+
+        ```c
+        InodeTree inodes = {
+            .alloc = inode_alloc,
+            // 新增allocg的初始化操作，初始化为新增函数inode_alloc_group
+            .allocg = inode_alloc_group,
+            .lock = inode_lock,
+            .unlock = inode_unlock,
+            .sync = inode_sync,
+            .get = inode_get,
+            .clear = inode_clear,
+            .share = inode_share,
+            .put = inode_put,
+            .read = inode_read,
+            .write = inode_write,
+            .lookup = inode_lookup,
+            .insert = inode_insert,
+            .remove = inode_remove,
+        };
+        ```
+
+    12. 修改`core/sysfile.c`中函数定义，代码如下所示：
+
+        * 修改create函数，以支持分配inode时区分文件和目录
+
+            ```c
+            Inode *create(char *path, short type, short major, short minor, OpContext *ctx) {
+                /* TODO: Your code here. */
+                u32 off;
+                Inode *ip, *dp;
+                char name[FILE_NAME_MAX_LENGTH] = {0};
+                // 新定义gno，供allocg函数调用
+                u32 gno;
+                usize ino;
+
+                // 当前文件的父目录是否存在
+                if ((dp = nameiparent(path, name, ctx)) == 0) {
+                    return 0;
+                }
+
+                // 首先判断目标名称的文件是否存在于当前目录中
+                inodes.lock(dp);
+                // 获取父目录的gno，对应type为普通文件的情况
+                gno = ((u32)dp->inode_no - 1) / (NINODES / NGROUPS);
+
+                // 待创建文件或目录的名称已存在
+                if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
+                    // printf("ino: %u\n", inodes.lookup(dp, name, (usize *)&off));
+                    ip = inodes.get(ino);
+                    inodes.unlock(dp);
+                    inodes.put(ctx, dp);
+                    inodes.lock(ip);
+                    // 如果待创建对象为文件且存在同名文件，直接返回当前文件的inode
+                    if (type == INODE_REGULAR && ip->entry.type == INODE_REGULAR) {
+                        return ip;
+                    }
+                    inodes.unlock(ip);
+                    inodes.put(ctx, ip);
+                    // 否则全部异常
+                    return 0;
+                }
+
+                // 不存在，分配inode
+                // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
+                // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
+                // 分支功能在allocg中实现，即inode_alloc_group函数
+                while(!(ip = inodes.get(inodes.allocg(ctx, (u16)type, gno)))) {
+                    gno++;
+                }
+
+                // 无法按组分配inode，改为从头寻找空闲块进行分配
+                // 若仍未分配成功，抛出异常
+                if (gno >= NGROUPS && (ip = inodes.get(inodes.alloc(ctx, (u16)type))) == 0) {
+                    PANIC("create: inodes.alloc");
+                }
+
+                // 初始化磁盘中inode相关信息
+                inodes.lock(ip);
+                ip->entry.major = (u16)major;
+                ip->entry.minor = (u16)minor;
+                ip->entry.num_links = 1;
+                inodes.sync(ctx, ip, 1);
+
+                // 对于新建目录的情况，要额外考虑“.”与“..”两个文件
+                if (type == INODE_DIRECTORY) {
+                    dp->entry.num_links++;
+                    inodes.sync(ctx, dp, 0);
+                    inodes.insert(ctx, ip, ".", ip->inode_no);
+                    inodes.insert(ctx, ip, "..", dp->inode_no);
+                }
+                inodes.insert(ctx, dp, name, ip->inode_no);
+
+                inodes.unlock(dp);
+                inodes.put(ctx, dp);
+
+                return ip;
+            }            
+            ```
+
+            > 至此小文件与目录的放置策略完成
+
+* 总结
+
+    此环节中主要实现两个策略：新建文件优先分配到当前块组，新建目录优先分配到最空闲块组。前者通过获取父目录的块组编号确定分配位置，后者通过遍历used_block数组获取最空闲块组，最后通过新定义的**inode_alloc_group**与**cache_allocg**进行指定块组的inode和data块分配。
 
 ### 实现大文件优化放置策略
 
-* 主要修改文件
-* 修改说明
+* 主要修改文件：`/src/fs/inode.c`
+* 修改说明：
+
+    1. 再次修改`fs/inode.c`中相关宏定义，如下所示：
+
+        ```c
+        // 新增以下宏定义
+        // 每个inode可在单个块组中分配的间接块数目，主要用于大文件处理
+        // 本实验中大文件的定义为超出了直接块数目
+        // 这里的分块数目算法核心是间隔分组，因此会有一个乘2的操作
+        #define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)    
+        ```
+
+    2. 修改`fs/inode.c`中相关函数定义，如下所示：
+
+        * 修改inode_map函数，对于大文件的数据块分配进行特殊处理，代码如下所示：
+
+            ```c
+            static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modified) {
+                InodeEntry *entry = &inode->entry;
+                usize index = offset / BLOCK_SIZE;
+
+                // 获取当前inode所在块组编号
+                u32 gno = ((u32)inode->inode_no - 1) / (NINODES / NGROUPS);
+
+                // 小文件，可以完全放置在当前块组中，否则按序查找其他块组
+                if (index < INODE_NUM_DIRECT) {
+                    if (entry->addrs[index] == 0) {
+                        // 从父目录块组开始顺序寻找可分配块组
+                        while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+                            gno++;
+                        }
+                        // 否则使用默认alloc函数进行分配
+                        if (gno >= NGROUPS) {
+                            entry->indirect = (u32)cache->alloc(ctx);
+                        } 
+                        set_flag(modified);
+                    }
+
+                    return entry->addrs[index];
+                }
+
+                index -= INODE_NUM_DIRECT;
+                assert(index < INODE_NUM_INDIRECT);
+
+                // 分配间接块索引块，与小文件处理方式一致
+                if (entry->indirect == 0) {
+                    while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+                        gno++;
+                    }
+                    if (gno >= NGROUPS) {
+                        entry->indirect = (u32)cache->alloc(ctx);
+                    } 
+                    set_flag(modified);
+                }
+
+                Block *block = cache->acquire(entry->indirect);
+                u32 *addrs = get_addrs(block);
+
+                // 分配间接块，分配逻辑与mkfs中初始用户程序的分配方式类似
+                if (addrs[index] == 0) {
+                    // 根据间接块编号获取目标块组，默认为下一块组
+                    usize tgno =  (index / NINBLOCKS_PER_GROUP + 1) % NGROUPS;
+                    usize step = 2;
+                    // 优先间隔分配
+                    while (used_block[tgno] == sblock->num_datablocks_per_group) {
+                        tgno = tgno + step;
+                        // 如果间隔分配到达块组尾，则从头开始按相邻块组进行分配
+                        if (tgno >= NGROUPS) {
+                            tgno = 0;
+                            step = 1;
+                        }
+                        // 无法分配块组，直接跳出，交给allocg函数处理异常
+                        if (step == 1 && tgno >= NGROUPS) {
+                            break;
+                        }
+                    }
+
+                    addrs[index] = (u32)cache->allocg(ctx, (u32)tgno);
+                    cache->sync(ctx, block);
+                    set_flag(modified);
+                }
+
+                usize addr = addrs[index];
+                cache->release(block);
+                return addr;
+            }            
+            ```
+
+            > 至此完成了对大文件的支持
+
+* 总结
+
+    大文件的处理方式是将数据块分散到各个分组中存储，同时确保不过于分散以保证一定程度的读写性能。**inode_map**函数为特定的inode分配数据块，对打文件的支持只需修改内部增加分支情况。
 
 ### shell程序编写
 
