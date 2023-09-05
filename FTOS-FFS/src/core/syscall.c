@@ -53,12 +53,8 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
                                       [SYS_read] = (int (*)())sys_read,
                                       [SYS_write] = (int (*)())sys_write,
                                       [SYS_close] = sys_close,
-<<<<<<< HEAD
-                                      [SYS_myyield] = sys_yield};
-=======
                                       [SYS_myyield] = sys_yield,
                                       [228] = sys_ctime};
->>>>>>> 0a45e245502ffae18025bfaee7cda58d61a49f97
 
 const char(*syscall_table_str[NR_SYSCALL]) = {[0 ... NR_SYSCALL - 1] = "sys_default",
                                               [SYS_set_tid_address] = "sys_gettid",

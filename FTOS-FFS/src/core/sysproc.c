@@ -56,11 +56,7 @@ int sys_wait4() {
 
 int sys_exit() {
     exit();
-<<<<<<< HEAD
 }
-=======
-}
-
 
 int sys_ctime() {
     u64 pct, frq;
@@ -68,4 +64,3 @@ int sys_ctime() {
     asm volatile("mrs %[freq], cntfrq_el0" : [freq] "=r"(frq));
     return (int)(pct / (frq / 1000));
 }
->>>>>>> 0a45e245502ffae18025bfaee7cda58d61a49f97
