@@ -21,7 +21,7 @@ int main(int argc, char const *argv[])
 	printf("open\n");
 	u64 start, end;
 	printf("clock\n");
-	size_t fsize = BLOCK_SIZE / 2;
+	size_t fsize = BLOCK_SIZE * 50;
 
 	start = syscall(228);
 	char ch = '0';

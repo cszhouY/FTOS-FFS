@@ -294,7 +294,7 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     if (index < INODE_NUM_DIRECT) {
         if (entry->addrs[index] == 0) {
             // 从父目录块组开始顺序寻找可分配块组
-            while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+            while (gno < NGROUPS && !(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
                 gno++;
             }
             // 否则使用默认alloc函数进行分配
@@ -312,7 +312,7 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
 
     // 分配间接块索引块，与小文件处理方式一致
     if (entry->indirect == 0) {
-        while(!(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
+        while (gno < NGROUPS && !(entry->indirect = (u32)cache->allocg(ctx, gno))) {
             gno++;
         }
         if (gno >= NGROUPS) {
