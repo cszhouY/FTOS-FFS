@@ -376,6 +376,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
         assert(inode->entry.major == 1);
         return (usize)console_write(inode, (char *)src, (isize)count);
     }
+    printf ("inode_write, num_bytes: %u, offset: %u, count: %u\n", entry->num_bytes, offset, count);
     assert(offset <= entry->num_bytes);
     assert(end <= INODE_MAX_BYTES);
     assert(offset <= end);
