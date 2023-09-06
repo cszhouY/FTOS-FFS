@@ -1321,6 +1321,27 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
     }    
     ```
 
+    系统调用内的 **inodes.empty** 函数用于判断某个inode对应的目录是否为空（不包括.和..），相应地在`src/fs/inode.c`和`src/fs/inode.h`中进行了修改，代码如下：
+
+    ```c
+    static usize inode_empty(Inode *inode) {
+        InodeEntry *entry = &inode->entry;
+        // printf("inode %u, name %s, inode_type %u\n", inode->inode_no, name, inode->entry.type);
+        assert(entry->type == INODE_DIRECTORY);
+
+        DirEntry dentry;
+        // 跳过.与..进行遍历
+        for (usize offset = 2 * sizeof(dentry); offset < entry->num_bytes; offset += sizeof(dentry)) {
+            if (inode_read(inode, (u8 *)&dentry, offset, sizeof(dentry)) != sizeof(dentry))
+                PANIC("inode_empty");
+            // 某一目录项的inode编号不为0，说明存在文件
+            if (dentry.inode_no != 0)
+                return 0;
+        }
+        return 1;
+    }    
+    ```
+
     之后，在同目录下的 `syscall.h` 中，修改系统调用表（`syscall_table` 与 `syscall_table_str`），如下所示：
 
     ```c
