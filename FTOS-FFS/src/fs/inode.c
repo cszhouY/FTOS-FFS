@@ -445,6 +445,23 @@ static usize inode_lookup(Inode *inode, const char *name, usize *index) {
     return 0;
 }
 
+static usize inode_empty(Inode *inode) {
+    InodeEntry *entry = &inode->entry;
+    // printf("inode %u, name %s, inode_type %u\n", inode->inode_no, name, inode->entry.type);
+    assert(entry->type == INODE_DIRECTORY);
+
+    DirEntry dentry;
+    for (usize offset = 2 * sizeof(dentry); offset < entry->num_bytes; offset += sizeof(dentry)) {
+        if (inode_read(inode, (u8 *)&dentry, offset, sizeof(dentry)) != sizeof(dentry))
+            PANIC("inode_empty");
+        if (dentry.inode_no != 0)
+            return 0;
+    }
+    return 1;
+}
+
+
+
 // see `inode.h`.
 static usize inode_insert(OpContext *ctx, Inode *inode, const char *name, usize inode_no) {
     InodeEntry *entry = &inode->entry;
@@ -607,6 +624,7 @@ InodeTree inodes = {
     .read = inode_read,
     .write = inode_write,
     .lookup = inode_lookup,
+    .empty = inode_empty,
     .insert = inode_insert,
     .remove = inode_remove,
 };

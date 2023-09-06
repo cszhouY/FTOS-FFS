@@ -94,6 +94,8 @@ typedef struct InodeTree {
     // NOTE: caller must hold the lock of `inode`.
     usize (*lookup)(Inode *inode, const char *name, usize *index);
 
+    usize (*empty)(Inode *inode);
+
     // for directory inode only.
     // originally named `dirlink` in xv6. The name `dirlink` is a misnomer, since it will
     // not increment target inode's link count.
