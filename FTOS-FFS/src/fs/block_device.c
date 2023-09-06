@@ -26,10 +26,12 @@ BlockDevice block_device;
 void init_block_device() {
     sd_init();
 
-    u32 sd_num;
-    u32 sd_size = (sizeof(struct buf) - 16);
+    usize sd_num;
+    usize sd_size = (sizeof(struct buf) - 16);
+    usize sd_start = SECTS_PER_BLOCK;
+
     for (sd_num = 0; sd_num < BLOCK_SIZE / sd_size; sd_num++) {
-        sd_read(1 + sd_num, sblock_data + sd_num * sd_size);
+        sd_read(sd_start + sd_num, sblock_data + sd_num * sd_size);
     }
     block_device.read = sd_read;
     block_device.write = sd_write;

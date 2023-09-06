@@ -200,37 +200,40 @@ int sys_fstatat() {
     return 0;
 }
 
+// 修改以支持FFS
 Inode *create(char *path, short type, short major, short minor, OpContext *ctx) {
     /* TODO: Your code here. */
     u32 off;
     Inode *ip, *dp;
     char name[FILE_NAME_MAX_LENGTH] = {0};
+    // 新定义gno，供allocg函数调用
     u32 gno;
     usize ino;
 
-    // 目录是否存在
+    // 当前文件的父目录是否存在
     if ((dp = nameiparent(path, name, ctx)) == 0) {
         return 0;
     }
 
     // 首先判断目标名称的文件是否存在于当前目录中
     inodes.lock(dp);
-    // 此处要进行修改
     // 获取父目录的gno，对应type为普通文件的情况
     gno = ((u32)dp->inode_no - 1) / (NINODES / NGROUPS);
 
-    // 文件名已存在
+    // 待创建文件或目录的名称已存在
     if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
         // printf("ino: %u\n", inodes.lookup(dp, name, (usize *)&off));
         ip = inodes.get(ino);
         inodes.unlock(dp);
         inodes.put(ctx, dp);
         inodes.lock(ip);
+        // 如果待创建对象为文件且存在同名文件，直接返回当前文件的inode
         if (type == INODE_REGULAR && ip->entry.type == INODE_REGULAR) {
             return ip;
         }
         inodes.unlock(ip);
         inodes.put(ctx, ip);
+        // 否则全部异常
         return 0;
     }
 
@@ -242,10 +245,12 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
     }
 
     // 无法按组分配inode，改为从头寻找空闲块进行分配
+    // 若仍未分配成功，抛出异常
     if (gno >= NGROUPS && (ip = inodes.get(inodes.alloc(ctx, (u16)type))) == 0) {
         PANIC("create: inodes.alloc");
     }
 
+    // 初始化磁盘中inode相关信息
     inodes.lock(ip);
     ip->entry.major = (u16)major;
     ip->entry.minor = (u16)minor;
@@ -265,7 +270,7 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
     inodes.put(ctx, dp);
 
     return ip;
-}
+}            
 
 int sys_openat() {
     char *path;

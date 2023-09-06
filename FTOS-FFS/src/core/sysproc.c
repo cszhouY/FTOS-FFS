@@ -58,7 +58,6 @@ int sys_exit() {
     exit();
 }
 
-
 int sys_ctime() {
     u64 pct, frq;
     asm volatile("mrs %[cnt], cntpct_el0" : [cnt] "=r"(pct));
