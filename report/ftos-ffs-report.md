@@ -103,7 +103,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             u32 num_datablocks_per_group; // number of data blocks in a single block group
             u32 bitmap_start_per_group; // the first block of bitmap blocks in a single block group
             u32 data_start_per_group; // the first block of data blocks in a single block group
-        } SuperBlock;   
+        } SuperBlock;
         ```
 
     2. 修改 `fs/defines.h` 中相关宏定义，主要包括以下内容：
@@ -313,7 +313,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                     // 数据块优先考虑分配在当前块组中
                     // 如果当前块组数据块已完全分配，则寻找下一个块组
                     // 考虑到初始化操作，一般不会出现无法分配的问题
-                    while (used_block[gno] == sb.num_datablocks_per_group) 
+                    while (used_block[gno] == sb.num_datablocks_per_group)
                         gno = (gno + 1) % NGROUPS;
                     // 确定待分配组后确定组内待分配数据块，由used_block确定下一个可分配块
                     freeblock = sb.bg_start + gno * BPG + sb.data_start_per_group + used_block[gno];
@@ -392,7 +392,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 // 更新磁盘inode中的文件大小属性
                 din.num_bytes = xint(off);
                 winode(inum, &din);
-            }            
+            }
             ```
 
         * 修改主体函数结构，如下所示：
@@ -441,9 +441,9 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                     for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
                         // 由于新增了块组编号，块编号的计算方式也需要更新
                         // 任一块组位图块编号 = 块组起始 + 块组偏移块数 + 块组内位图起始 + 位图块偏移
-                        usize block_no = sblock->bg_start + 
+                        usize block_no = sblock->bg_start +
                                         h * sblock->blocks_per_group +
-                                        sblock->bitmap_start_per_group + 
+                                        sblock->bitmap_start_per_group +
                                         i / BIT_PER_BLOCK;
                         Block *block = cache_acquire(block_no);
 
@@ -483,7 +483,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
         ```c
         // 新增以下宏定义
         // 每个块组中的inode数目
-        #define GINODES (sblock->num_inodes / sblock->num_groups)  
+        #define GINODES (sblock->num_inodes / sblock->num_groups)
         ```
 
     8. 修改`fs/inode.c`中相关函数定义，如下所示：
@@ -492,10 +492,10 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
             ```c
             static INLINE usize to_block_no(usize inode_no) {
-                // inode所在的块编号 = 
+                // inode所在的块编号 =
                 //      块组起始位置 + 块组偏移 + inode块组内偏移
-                return sblock->bg_start + 
-                       sblock->blocks_per_group * (inode_no / GINODES) + 
+                return sblock->bg_start +
+                       sblock->blocks_per_group * (inode_no / GINODES) +
                        ((inode_no % GINODES) / (INODE_PER_BLOCK));
             }
             ```
@@ -552,8 +552,8 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             for (h = 0; h < NGROUPS; h++) {
                 for (i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
                     // 调用块设备的read函数读取位图信息
-                    block_device.read(sblock->bg_start + 
-                                    h * sblock->blocks_per_group + 
+                    block_device.read(sblock->bg_start +
+                                    h * sblock->blocks_per_group +
                                     sblock->bitmap_start_per_group +
                                     i / BIT_PER_BLOCK, used_block_data);
                     // 转为BitmapCell结构
@@ -570,7 +570,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             // printf("init_bcache finished.\n");
             init_inodes(sblock, &bcache);
             // printf("init_inodes finished.\n");
-        }        
+        }
         ```
 
     4. 修改`fs/cache.h`中**BlockCache**结构，代码如下所示：
@@ -598,11 +598,11 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             static usize cache_allocg(OpContext *ctx, u32 gno) {
                 // 限定合法块组编号
                 assert(gno < NGROUPS);
-                
+
                 // 由于给定了块组编号，不需要额外的块组循环
                 // 其余逻辑与cache_alloc一致
                 for (usize i = 0; i < sblock->blocks_per_group; i += BIT_PER_BLOCK) {
-                    usize block_no = sblock->bg_start + 
+                    usize block_no = sblock->bg_start +
                                     sblock->bitmap_start_per_group + gno * sblock->blocks_per_group +
                                     i / BIT_PER_BLOCK;
                     Block *block = cache_acquire(block_no);
@@ -629,7 +629,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                     cache_release(block);
                 }
                 return 0;
-            }            
+            }
             ```
 
     7. 修改`fs/cache.c`中初始化操作，代码如下所示：
@@ -714,7 +714,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 }
                 // 这里表明分配失败
                 return 0;
-            }            
+            }
             ```
 
     11. 修改`fs/inode.c`中初始化操作，代码如下所示：
@@ -814,7 +814,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 inodes.put(ctx, dp);
 
                 return ip;
-            }            
+            }
             ```
 
             > 至此小文件与目录的放置策略完成
@@ -835,7 +835,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
         // 每个inode可在单个块组中分配的间接块数目，主要用于大文件处理
         // 本实验中大文件的定义为超出了直接块数目
         // 这里的分块数目算法核心是间隔分组，因此会有一个乘2的操作
-        #define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)    
+        #define NINBLOCKS_PER_GROUP ((BLOCK_SIZE / sizeof(u32)) / (NGROUPS - 1) * 2 + 1)
         ```
 
     2. 修改`fs/inode.c`中相关函数定义，如下所示：
@@ -860,7 +860,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                         // 否则使用默认alloc函数进行分配
                         if (gno >= NGROUPS) {
                             entry->indirect = (u32)cache->alloc(ctx);
-                        } 
+                        }
                         set_flag(modified);
                     }
 
@@ -877,7 +877,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                     }
                     if (gno >= NGROUPS) {
                         entry->indirect = (u32)cache->alloc(ctx);
-                    } 
+                    }
                     set_flag(modified);
                 }
 
@@ -911,7 +911,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 usize addr = addrs[index];
                 cache->release(block);
                 return addr;
-            }            
+            }
             ```
 
             > 至此完成了对大文件的支持
@@ -934,7 +934,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
     ```
 
 * 代码说明
-  
+
     echo的代码较为简单，如下所示：
 
     ```c
@@ -946,7 +946,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             // 对于echo中带有空格的部分，判断是否为文本尾
             // 由此决定打印空格还是换行符
             printf("%s%s", argv[i], i + 1 < argc ? " " : "\n");
-        
+
         return 0;
     }
     ```
@@ -1093,7 +1093,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
         // 文件名足够长，不需要填充空格
         if (strlen(p) >= FILE_NAME_MAX_LENGTH)
             return p;
-        
+
         // 否则使用空格填充文件名并返回
         memmove(buf, p, strlen(p));
         memset(buf + strlen(p), ' ', FILE_NAME_MAX_LENGTH - strlen(p));
@@ -1180,15 +1180,111 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
         // 将待遍历路径循环传入ls中并调用
         for (i = 1; i < argc; i++)
             ls(argv[i]);
-        
+
         return 0;
-    }    
+    }
     ```
 
 ## 实验验证
 
-### FFS效果验证
+### FFS功能验证
+
+* 块组结构
+
+    `mkfs` 创建初始文件镜像后将用户程序写入镜像中，最后更新bitmap。下面是 `mkfs` 中位图更新函数的运行结果：
+
+    ```text
+    balloc: first 92 datablocks in group 0 have been allocated
+    balloc: write bitmap block at sector 68
+    balloc: first 96 datablocks in group 1 have been allocated
+    balloc: write bitmap block at sector 168
+    balloc: first 96 datablocks in group 2 have been allocated
+    balloc: write bitmap block at sector 268
+    balloc: first 96 datablocks in group 3 have been allocated
+    balloc: write bitmap block at sector 368
+    balloc: first 32 datablocks in group 4 have been allocated
+    balloc: write bitmap block at sector 468
+    balloc: first 3 datablocks in group 5 have been allocated
+    balloc: write bitmap block at sector 568
+    balloc: first 0 datablocks in group 6 have been allocated
+    balloc: write bitmap block at sector 668
+    balloc: first 0 datablocks in group 7 have been allocated
+    balloc: write bitmap block at sector 768
+    balloc: first 0 datablocks in group 8 have been allocated
+    balloc: write bitmap block at sector 868
+    balloc: first 0 datablocks in group 9 have been allocated
+    balloc: write bitmap block at sector 968
+    ```
+
+    由于用户程序大部分都被划分为大文件，因此文件数据块被分组放置。
+
+* 文件分配逻辑
+
+    进入文件系统后，使用 `ls` 命令查看当前根目录文件以及子目录：
+
+    ```shell
+    $ ls
+    .              16384 1 512
+    ..             16384 1 512
+    init           32768 2 13680
+    sh             32768 3 38720
+    echo           32768 4 30024
+    cat            32768 5 30024
+    mkdir          32768 6 30024
+    ls             32768 7 34120
+    test           32768 8 30264
+    console        0 9 0
+    $ 
+    ```
+
+    > 文件名后从左至右依次为：**文件类型** **文件的inode编号** **文件大小**
+
+    根目录下的文件inode都集中在根目录所在的块组中。
+
+    之后在根目录使用 `echo` 重定向输出来新建文件，并再次使用 `ls` 查看文件情况：
+
+    ```shell
+    $ echo a > a.txt
+    $ ls
+    .              16384 1 512
+    ..             16384 1 512
+    init           32768 2 13680
+    sh             32768 3 38720
+    echo           32768 4 30024
+    cat            32768 5 30024
+    mkdir          32768 6 30024
+    ls             32768 7 34120
+    test           32768 8 30264
+    console        0 9 0
+    a.txt          32768 10 2
+    $ 
+    ```
+
+    可以看到，新文件的inode仍然是在根目录
+
+* 目录分配逻辑
+* 大文件分配逻辑
+
+### FFS性能验证
+
+#### 测试设计
+
+本实验采用用户进程的方式运行测试程序，主要测试以下情况：
+
+* 多文件读写性能
+* 大文件读写性能
+
+#### 测试代码
+
+#### 测试结果
 
 ### shell功能验证
 
+* echo
+* cat
+* mkdir
+* ls
+
 ## 实验总结
+
+.

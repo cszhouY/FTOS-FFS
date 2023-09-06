@@ -115,7 +115,7 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
         }
     }
 
-    printf("inode_allog gno: %u\n", gno);
+    // printf("inode_allog gno: %u\n", gno);
 
     // ino的含义变为某一块组内相对的inode编号
     // ino在块组内顺序分配
@@ -398,7 +398,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
         assert(inode->entry.major == 1);
         return (usize)console_write(inode, (char *)src, (isize)count);
     }
-    printf ("inode_write: %u, num_bytes: %u, offset: %llu, count: %llu\n", inode->inode_no, entry->num_bytes, offset, count);
+    // printf ("inode_write: %u, num_bytes: %u, offset: %llu, count: %llu\n", inode->inode_no, entry->num_bytes, offset, count);
     assert(offset <= entry->num_bytes);
     assert(end <= INODE_MAX_BYTES);
     assert(offset <= end);

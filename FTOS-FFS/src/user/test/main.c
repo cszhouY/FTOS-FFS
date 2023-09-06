@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <fs/defines.h>
@@ -16,16 +17,18 @@ int main(int argc, char const *argv[])
 	}
 	close(fd);
 
-	char buf[BLOCK_SIZE] = {'0'};
+	char buf[BLOCK_SIZE];
+	memset(buf, '0', sizeof(buf));
+
+
 	int start, end;
 	const size_t tmp = INODE_NUM_INDIRECT / 8;
 	unsigned usetime[tmp + 1];
 
-
 	for (size_t i = 0; i <= 8; ++i) {
 		fd = open("testbuf", O_WRONLY);
 		assert(fd > 0);
-		size_t fsize = INODE_NUM_DIRECT + tmp * i ;
+		size_t fsize = INODE_NUM_DIRECT + i * tmp;
 		start = syscall(228);
 		for (size_t j = 0; j < fsize; ++j) {
 			write(fd, buf, BLOCK_SIZE);
