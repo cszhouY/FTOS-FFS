@@ -27,7 +27,8 @@ int sys_mkdirat();
 int sys_mknodat();
 int sys_chdir();
 int sys_exec();
-int sys_ctime();
+int sys_ctime();  // 228
+int sys_unlink();  // 32
 
 int in_user(void *s, usize n);
 int fetchstr(u64 addr, char **pp);

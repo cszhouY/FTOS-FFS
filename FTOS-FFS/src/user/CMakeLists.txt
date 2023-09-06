@@ -38,6 +38,7 @@ set(user_binary_list
 	cat
 	mkdir
 	ls
+	rm
 	test)
 
 foreach(binary ${user_binary_list})

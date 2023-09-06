@@ -5,8 +5,12 @@
 #include <sys/stat.h>
 #include "../../fs/defines.h"
 
+int myunlink(char *filename) {
+    return syscall(87, filename);
+}
+
 int remove_file(const char *filename) {
-    if (unlink(filename) == 0) {
+    if (myunlink(filename) == 0) {
         return 1;
     } else {
         printf("rm error\n", filename);
