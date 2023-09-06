@@ -367,7 +367,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {
         count = entry->num_bytes - offset;
     usize end = offset + count;
 
-    printf("& inode_read from inode %u, offset %u, size %d \n", inode->inode_no, offset, count);
+    // printf("& inode_read from inode %u, offset %u, size %d \n", inode->inode_no, offset, count);
     assert(offset <= entry->num_bytes);
 
     assert(end <= entry->num_bytes);
@@ -398,7 +398,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
         assert(inode->entry.major == 1);
         return (usize)console_write(inode, (char *)src, (isize)count);
     }
-    printf ("inode_write, num_bytes: %u, offset: %u, count: %u\n", entry->num_bytes, offset, count);
+    printf ("inode_write: %u, num_bytes: %u, offset: %llu, count: %llu\n", inode->inode_no, entry->num_bytes, offset, count);
     assert(offset <= entry->num_bytes);
     assert(end <= INODE_MAX_BYTES);
     assert(offset <= end);
@@ -416,7 +416,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset, us
     }
 
     if (end > entry->num_bytes) {
-        entry->num_bytes = (u16)end;
+        entry->num_bytes = (u32)end;
         modified = true;
     }
     if (modified)
