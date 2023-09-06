@@ -29,7 +29,7 @@ void init_filesystem() {
                 }
             }
         }
-        printf("used_block: %u\n", used_block[h]);
+        printf("used_block: %u: %u\n", h, used_block[h]);
     }
     // printf("init_bcache finished.\n");
     init_inodes(sblock, &bcache);
