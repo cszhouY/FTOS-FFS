@@ -24,9 +24,9 @@ int main(int argc, char const *argv[])
 	size_t fsize = BLOCK_SIZE * 50;
 
 	start = syscall(228);
-	char ch = '0';
-	for (size_t i = 0; i < fsize; ++i) {
-		write(fd, &ch, 1);
+	char ch[10] = "0000000000";
+	for (size_t i = 0; i < fsize / 10; ++i) {
+		write(fd, &ch, 10);
 	}
 	end = syscall(228);
 	printf("write %u bits, use time %u ms\n", fsize, (end - start));

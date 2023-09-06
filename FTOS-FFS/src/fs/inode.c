@@ -366,6 +366,8 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count) {
     if (count + offset > entry->num_bytes)
         count = entry->num_bytes - offset;
     usize end = offset + count;
+
+    printf("& inode_read from inode %u, offset %u, size %d \n", inode->inode_no, offset, count);
     assert(offset <= entry->num_bytes);
 
     assert(end <= entry->num_bytes);
