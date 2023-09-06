@@ -75,13 +75,14 @@ const char(*syscall_table_str[NR_SYSCALL]) = {[0 ... NR_SYSCALL - 1] = "sys_defa
                                               [SYS_newfstatat] = "sys_fstatat",
                                               [SYS_mkdirat] = "sys_mkdirat",
                                               [SYS_mknodat] = "sys_mknodat",
+                                              [87] = "sys_unlink",
                                               [SYS_openat] = "sys_openat",
                                               [SYS_writev] = "sys_writev",
                                               [SYS_read] = "sys_read",
                                               [SYS_write] = "sys_write",
                                               [SYS_close] = "sys_close",
                                               [SYS_myyield] = "sys_yield",
-                                              [SYS_clock_gettime] = "sys_ctime"};
+                                              [228] = "sys_ctime"};
 
 u64 syscall_dispatch(Trapframe *frame) {
     // switch (frame->x[8]) {

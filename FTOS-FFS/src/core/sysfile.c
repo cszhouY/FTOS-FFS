@@ -212,13 +212,16 @@ int sys_unlink()
     char name[FILE_NAME_MAX_LENGTH], *path;
     usize off;
 
+    // 读取系统调用传递的参数，参数只包含路径，否则直接退出
     if(argstr(0, &path) < 0) {
         printf("argstr(0, &path) < 0\n");
         return -1;
     }
 
+    // 开始一次原子操作
     OpContext ctx;
     bcache.begin_op(&ctx);
+    // 待删除对象不存在父目录，异常直接退出
     if((dp = nameiparent(path, name, &ctx)) == 0){
         bcache.end_op(&ctx);
         printf("(dp = nameiparent(path, name, &ctx)) == 0");
@@ -227,25 +230,34 @@ int sys_unlink()
 
     inodes.lock(dp);
 
-    // Cannot unlink "." or "..".
+    // 对于隐藏对象，无法进行删除操作
     if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
         goto bad;
 
+    // 获取待删除对象以及其在父目录的目录项的偏移
     if((ip = inodes.get(inodes.lookup(dp, name, &off))) == 0)
         goto bad;
+
     inodes.lock(ip);
 
     if(ip->entry.num_links < 1)
         PANIC("unlink: nlink < 1");
-    if(ip->entry.type == INODE_DIRECTORY && ip->entry.num_links > 2){
+
+    // printf("dp->entry.num_links: %d\n", dp->entry.num_links);
+    
+    // 无法删除非空文件夹
+    if(ip->entry.type == INODE_DIRECTORY && !inodes.empty(ip)){
         inodes.unlock(ip);
         inodes.put(&ctx, ip);
         goto bad;
     }
 
+    // 删除待删除对象在父目录中的项
     memset(&de, 0, sizeof(de));
-    if(inodes.write(&ctx, dp, (u8*)&de, off, sizeof(de)) != sizeof(de))
-        PANIC("unlink: writei");
+    if(inodes.write(&ctx, dp, (u8*)&de, off * sizeof(de), sizeof(de)) != sizeof(de))
+        PANIC("unlink: inode_write");
+    // 待删除对象为目录类型，父目录需要额外减少num_links
+    // 即删除对象内包含父目录的硬链接，删除对象后这一链接丢失
     if(ip->entry.type == INODE_DIRECTORY){
         dp->entry.num_links--;
         inodes.sync(&ctx, dp, 1);
@@ -253,6 +265,7 @@ int sys_unlink()
     inodes.unlock(dp);
     inodes.put(&ctx, dp);
 
+    // 文件本身而言删除指向自身的硬链接
     ip->entry.num_links--;
     inodes.sync(&ctx, ip, 1);
     inodes.unlock(ip);
@@ -260,17 +273,16 @@ int sys_unlink()
 
     bcache.end_op(&ctx);
 
-    printf ("ip->entry.type: %u\n", ip->entry.type);
-
     return 0;
 
+// 无法删除的情况
 bad:
     // printf ("bad!");
     inodes.unlock(dp);
     inodes.put(&ctx, dp);
     bcache.end_op(&ctx);
     return -1;
-}
+}    
 
 Inode *create(char *path, short type, short major, short minor, OpContext *ctx) {
     /* TODO: Your code here. */
