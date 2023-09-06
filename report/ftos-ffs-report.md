@@ -937,7 +937,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 基本功能及用法
 
-    echo在shell中用于打印文本内容，用法如下：
+    `echo` 在shell中用于打印文本内容，用法如下：
 
     ```shell
     eight@eight:~$ echo a
@@ -946,7 +946,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 代码说明
 
-    echo的代码较为简单，如下所示：
+    `echo` 的代码较为简单，如下所示：
 
     ```c
     int main(int argc, char *argv[])
@@ -966,7 +966,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 基本功能及用法
 
-    cat在shell中用于显示文本文件的内容，用法如下：
+    `cat` 在shell中用于显示文本文件的内容，用法如下：
 
     > 假设a.txt的内容尾abc
 
@@ -977,7 +977,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 代码说明
 
-    cat的运行逻辑为使用open库函数读取文件，如下所示：
+    `cat` 的运行逻辑为使用open库函数读取文件，如下所示：
 
     ```c
     // 缓存区，用于临时存储文本
@@ -1029,7 +1029,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 基本功能
 
-    mkdir在shell中用于新建目录，用法如下：
+    `mkdir` 在shell中用于新建目录，用法如下：
 
     > 假设当前目录存在一个子目录a，要在a中新建一个目录b
 
@@ -1042,7 +1042,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 代码说明
 
-    mkdir主要依靠 **mkdir** 调用创建目录，如下所示：
+    `mkdir` 主要依靠 **mkdir** 调用创建目录，如下所示：
 
     ```c
     int main(int argc, char *argv[])
@@ -1074,7 +1074,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 基本功能
 
-    ls在shell中主要用于展示当前目录下的所有文件以及子目录，用法如下：
+    `ls` 在shell中主要用于展示当前目录下的所有文件以及子目录，用法如下：
 
     > 假设当前目录有一个子目录test，test内有a、b和c三个文件
 
@@ -1087,7 +1087,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
 * 代码说明
 
-    ls的核心逻辑在于遍历当前目录下的所有文件以及子目录，针对FTOS最好能够打印处隐藏文件（.与..）以及基本文件信息（比如文件分配的inode号）等，代码如下：
+    `ls` 的核心逻辑在于遍历当前目录下的所有文件以及子目录，针对FTOS最好能够打印处隐藏文件（.与..）以及基本文件信息（比如文件分配的inode号）等，代码如下：
 
     ```c
     // 此函数的功能是根据完整路径获取最后一个‘/’之后的文件名
@@ -1194,6 +1194,162 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
         return 0;
     }
+    ```
+
+#### rm
+
+* 基本功能
+
+    `rm` 在shell中用于删除指定文件或目录，用法如下
+
+    > 假设当前目录存在一个子目录a，a中不包含任何文件或目录
+
+    ```shell
+    eight@eight:~$ ls
+    a
+    eight@eight:~$ rm a
+    eight@eight:~$ ls
+    eight@eight:~$ 
+    ```
+
+* 代码说明
+
+    `rm` 主要依靠 **myunlink** 函数进行删除操作，如下所示：
+
+    ```c
+    // 自定义函数，通过87号系统调用进行删除操作
+    int myunlink(const char *filename) {
+        return syscall(87, filename);
+    }
+
+    int main(int argc, char * argv[]) {
+        if (argc != 2) {
+            printf("Usage: rm <path>\n");
+            return 0;
+        }
+
+        struct stat st;
+
+        // 对应文件不存在或者系统调用失败的情况
+        if (!(stat(argv[1], &st) == 0 && myunlink(argv[1]) == 0))
+            printf("rm %s failed\n", argv[1]);
+
+        return 0;
+    }
+    ```
+
+    重点说明一下87号系统调用，位于 `src/core/sysfile.c`，代码如下所示：
+
+    ```c
+    int sys_unlink()
+    {
+        Inode *ip, *dp;
+        struct dirent de;
+        char name[FILE_NAME_MAX_LENGTH], *path;
+        usize off;
+
+        // 读取系统调用传递的参数，参数只包含路径，否则直接退出
+        if(argstr(0, &path) < 0) {
+            printf("argstr(0, &path) < 0\n");
+            return -1;
+        }
+
+        // 开始一次原子操作
+        OpContext ctx;
+        bcache.begin_op(&ctx);
+        // 待删除对象不存在父目录，异常直接退出
+        if((dp = nameiparent(path, name, &ctx)) == 0){
+            bcache.end_op(&ctx);
+            printf("(dp = nameiparent(path, name, &ctx)) == 0");
+            return -1;
+        }
+
+        inodes.lock(dp);
+
+        // 对于隐藏对象，无法进行删除操作
+        if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
+            goto bad;
+
+        // 获取待删除对象以及其在父目录的目录项的偏移
+        if((ip = inodes.get(inodes.lookup(dp, name, &off))) == 0)
+            goto bad;
+
+        inodes.lock(ip);
+
+        if(ip->entry.num_links < 1)
+            PANIC("unlink: nlink < 1");
+
+        // printf("dp->entry.num_links: %d\n", dp->entry.num_links);
+        
+        // 无法删除非空文件夹
+        if(ip->entry.type == INODE_DIRECTORY && !inodes.empty(ip)){
+            inodes.unlock(ip);
+            inodes.put(&ctx, ip);
+            goto bad;
+        }
+
+        // 删除待删除对象在父目录中的项
+        memset(&de, 0, sizeof(de));
+        if(inodes.write(&ctx, dp, (u8*)&de, off * sizeof(de), sizeof(de)) != sizeof(de))
+            PANIC("unlink: inode_write");
+        // 待删除对象为目录类型，父目录需要额外减少num_links
+        // 即删除对象内包含父目录的硬链接，删除对象后这一链接丢失
+        if(ip->entry.type == INODE_DIRECTORY){
+            dp->entry.num_links--;
+            inodes.sync(&ctx, dp, 1);
+        }
+        inodes.unlock(dp);
+        inodes.put(&ctx, dp);
+
+        // 文件本身而言删除指向自身的硬链接
+        ip->entry.num_links--;
+        inodes.sync(&ctx, ip, 1);
+        inodes.unlock(ip);
+        inodes.put(&ctx, ip);
+
+        bcache.end_op(&ctx);
+
+        return 0;
+
+    // 无法删除的情况
+    bad:
+        // printf ("bad!");
+        inodes.unlock(dp);
+        inodes.put(&ctx, dp);
+        bcache.end_op(&ctx);
+        return -1;
+    }    
+    ```
+
+    之后，在同目录下的 `syscall.h` 中，修改系统调用表（`syscall_table` 与 `syscall_table_str`），如下所示：
+
+    ```c
+    // syscall_table_str 也是类似的格式，不进行额外展示
+    int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
+                                        [SYS_set_tid_address] = sys_gettid,
+                                        [SYS_ioctl] = sys_ioctl,
+                                        [SYS_gettid] = sys_gettid,
+                                        [SYS_rt_sigprocmask] = sys_sigprocmask,
+                                        [SYS_brk] = (int (*)())sys_brk,
+                                        [SYS_execve] = sys_exec,
+                                        [SYS_sched_yield] = sys_yield,
+                                        [SYS_clone] = sys_clone,
+                                        [SYS_wait4] = sys_wait4,
+                                        [SYS_exit_group] = sys_exit,
+                                        [SYS_exit] = sys_exit,
+                                        [SYS_dup] = sys_dup,
+                                        [SYS_chdir] = sys_chdir,
+                                        [SYS_fstat] = sys_fstat,
+                                        [SYS_newfstatat] = sys_fstatat,
+                                        [SYS_mkdirat] = sys_mkdirat,
+                                        [SYS_mknodat] = sys_mknodat,
+                                        [87] = sys_unlink,  // 新增87号系统调用
+                                        [SYS_openat] = sys_openat,
+                                        [SYS_writev] = (int (*)())sys_writev,
+                                        [SYS_read] = (int (*)())sys_read,
+                                        [SYS_write] = (int (*)())sys_write,
+                                        [SYS_close] = sys_close,
+                                        [SYS_myyield] = sys_yield};    
     ```
 
 ## 实验验证
@@ -1396,6 +1552,56 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 * 多文件读写性能
 * 大文件读写性能
 
+#### 准备工作
+
+读写性能最直观的指标是读写时间，而FTOS并没有直接获取时间或者运行时间的系统调用，因此为了统计时间，额外编写了228号系统调用，位于 `src/core/sysproc.h`，其代码如下所示：
+
+```c
+int sys_ctime() {
+    u64 pct, frq;
+    // 通过内联汇编获取开机后cpu运行周期
+    asm volatile("mrs %[cnt], cntpct_el0" : [cnt] "=r"(pct));
+    // 通过内联汇编获取cpu时钟频率
+    asm volatile("mrs %[freq], cntfrq_el0" : [freq] "=r"(frq));
+    // 计算开机时间，单位为毫秒
+    return (int)(pct / (frq / 1000));
+}
+```
+
+之后在同目录下的 `syscall.h` 中，修改系统调用表（`syscall_table` 与 `syscall_table_str`），如下所示：
+
+```c
+// syscall_table_str 也是类似的格式，不进行额外展示
+int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
+                                    [SYS_set_tid_address] = sys_gettid,
+                                    [SYS_ioctl] = sys_ioctl,
+                                    [SYS_gettid] = sys_gettid,
+                                    [SYS_rt_sigprocmask] = sys_sigprocmask,
+                                    [SYS_brk] = (int (*)())sys_brk,
+                                    [SYS_execve] = sys_exec,
+                                    [SYS_sched_yield] = sys_yield,
+                                    [SYS_clone] = sys_clone,
+                                    [SYS_wait4] = sys_wait4,
+                                    [SYS_exit_group] = sys_exit,
+                                    [SYS_exit] = sys_exit,
+                                    [SYS_dup] = sys_dup,
+                                    [SYS_chdir] = sys_chdir,
+                                    [SYS_fstat] = sys_fstat,
+                                    [SYS_newfstatat] = sys_fstatat,
+                                    [SYS_mkdirat] = sys_mkdirat,
+                                    [SYS_mknodat] = sys_mknodat,
+                                    [87] = sys_unlink,  // 为实现rm新增87号系统调用
+                                    [SYS_openat] = sys_openat,
+                                    [SYS_writev] = (int (*)())sys_writev,
+                                    [SYS_read] = (int (*)())sys_read,
+                                    [SYS_write] = (int (*)())sys_write,
+                                    [SYS_close] = sys_close,
+                                    [SYS_myyield] = sys_yield,
+                                    [228] = sys_ctime}; // 新增的228号系统调用
+```
+
+之后便可以通过syscall函数
+
 #### 测试代码
 
 #### 测试结果
@@ -1463,6 +1669,65 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
     testbuf        32768 10 71680
     hello.txt      32768 11 14
     build          16384 141 32
+    $ 
+    ```
+
+* rm
+
+    `rm` 删除指定文件或空目录（目录不为空则失败）
+
+    ```shell
+    $ ls
+    .              16384 1 512
+    ..             16384 1 512
+    init           32768 2 13680
+    sh             32768 3 38720
+    echo           32768 4 30024
+    cat            32768 5 30024
+    mkdir          32768 6 30024
+    ls             32768 7 34120
+    rm             32768 8 30024
+    test           32768 9 30264
+    console        0 10 0
+    $ mkdir build
+    $ cd build
+    $ /echo a > a.txt
+    $ /ls
+    .              16384 121 48
+    ..             16384 1 512
+    a.txt          32768 122 2
+    $ cd ..
+    $ rm build
+    rm build failed
+    $ echo a > a.txt
+    $ ls
+    .              16384 1 512
+    ..             16384 1 512
+    init           32768 2 13680
+    sh             32768 3 38720
+    echo           32768 4 30024
+    cat            32768 5 30024
+    mkdir          32768 6 30024
+    ls             32768 7 34120
+    rm             32768 8 30024
+    test           32768 9 30264
+    console        0 10 0
+    build          16384 121 48
+    a.txt          32768 11 2
+    $ rm a.txt
+    $ ls
+    .              16384 1 512
+    ..             16384 1 512
+    init           32768 2 13680
+    sh             32768 3 38720
+    echo           32768 4 30024
+    cat            32768 5 30024
+    mkdir          32768 6 30024
+    ls             32768 7 34120
+    rm             32768 8 30024
+    test           32768 9 30264
+    console        0 10 0
+    build          16384 121 48
     $ 
     ```
 
