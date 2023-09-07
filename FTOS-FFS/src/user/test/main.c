@@ -68,46 +68,63 @@ void test_write_large_file() {
 }
 
 void test_multi_files() {
+	int fsize = INODE_NUM_DIRECT + INODE_NUM_INDIRECT;
 	int start, end;
 	double avg = 0;
 	printf ("===== test multiply files =====\n");
 	const int nfile = 10;
-	int fds[nfile];
-	char filename[nfile];
+	char *filename[10] = {"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10"};
 	for(int i = 0; i < nfile; ++i) {
-		char tmp[1] = {'0' + i};
-		fds[i] = open(tmp, O_WRONLY | O_CREAT);
-		assert(fds[i] > 0);
-		close(fds[i]);
+		fd = open(filename[i], O_WRONLY | O_CREAT);
+		assert(fd > 0);
+		close(fd);
 	}
-	int loop = 10;
-	while(loop--) {
+	int ncase = 10;
+	for (int c = 1; c <= ncase; ++c) {
 		unsigned t = 0;
 		for(int i = 0; i < nfile; ++i) {
-			char tmp[1] = {'0' + i};
-			fds[i] = open(tmp, O_WRONLY);
-			assert(fds[i] > 0);
+			fd = open(filename[i], O_WRONLY);
+			assert(fd > 0);
 			start = syscall(228);
-			for (int _ = 0; _ < INODE_NUM_DIRECT; ++_) {
-				write(fds[i], buf, BLOCK_SIZE);
+			for (int _ = 0; _ < fsize; ++_) {
+				write(fd, buf, BLOCK_SIZE);
 			}
 			end = syscall(228);
 			t += end - start;
-			close(fds[i]);
+			close(fd);
 		}
-		printf("testcase %d, write %d different files at the same derecotry, cost %u ms\n", 10 - loop, nfile, t);
+		printf("testcase %d, write %d different files at the same derecotry, cost %u ms\n", c, nfile, t);
 		avg += (double) t / 10;
 	}
-	printf("avg write speed %f ms\n", avg);
+	printf("avg write time %f ms\n", avg);
+
+	avg = 0;
+	for (int c = 1; c <= ncase; ++c) {
+		unsigned t = 0;
+		for(int i = 0; i < nfile; ++i) {
+			fd = open(filename[i], O_WRONLY);
+			assert(fd > 0);
+			start = syscall(228);
+			for (int _ = 0; _ < fsize; ++_) {
+				read(fd, buf, BLOCK_SIZE);
+			}
+			end = syscall(228);
+			t += end - start;
+			close(fd);
+		}
+		printf("testcase %d, read %d different files at the same derecotry, cost %u ms\n", c, nfile, t);
+		avg += (double) t / 10;
+	}
+	printf("avg read time %f ms\n", avg);
 }
 
 int main(int argc, char const *argv[])
 {
 	init_env();
 	
-	// test_write_single_file();
+	test_write_single_file();
 
-	// test_write_large_file();
+	test_write_large_file();
 
 	test_multi_files();
 
