@@ -506,9 +506,35 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 // inode所在的块编号 =
                 //      块组起始位置 + 块组偏移 + inode块组内偏移
                 return sblock->bg_start +
-                       sblock->blocks_per_group * (inode_no / GINODES) +
-                       ((inode_no % GINODES) / (INODE_PER_BLOCK));
+                       sblock->blocks_per_group * ((inode_no - 1) / GINODES) +
+                       (((inode_no - 1) % GINODES) / (INODE_PER_BLOCK));
             }
+            ```
+
+        * 修改inode_alloc函数的返回值，与后续新增函数统一
+  
+            ```c
+            static usize inode_alloc(OpContext *ctx, InodeType type) {
+                assert(type != INODE_INVALID);
+                for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
+                    usize block_no = to_block_no(ino);
+                    // printf("inode %u in block %u\n", ino, block_no);
+                    Block *block = cache->acquire(block_no);
+                    InodeEntry *inode = get_entry(block, ino);
+
+                    if (inode->type == INODE_INVALID) {
+                        memset(inode, 0, sizeof(InodeEntry));
+                        inode->type = type;
+                        cache->sync(ctx, block);
+                        cache->release(block);
+                        return ino;
+                    }
+
+                    cache->release(block);
+                }
+                // 将PANIC替换为返回0
+                return 0;
+            }            
             ```
 
         > 至此，基于块组的磁盘结构基本改写完成，系统可以正常运行
@@ -760,52 +786,50 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 u32 off;
                 Inode *ip, *dp;
                 char name[FILE_NAME_MAX_LENGTH] = {0};
-                // 新定义gno，供allocg函数调用
                 u32 gno;
                 usize ino;
 
-                // 当前文件的父目录是否存在
+                // 目录是否存在
                 if ((dp = nameiparent(path, name, ctx)) == 0) {
                     return 0;
                 }
 
                 // 首先判断目标名称的文件是否存在于当前目录中
                 inodes.lock(dp);
+                // 此处要进行修改
                 // 获取父目录的gno，对应type为普通文件的情况
                 gno = ((u32)dp->inode_no - 1) / (NINODES / NGROUPS);
 
-                // 待创建文件或目录的名称已存在
+                // 文件名已存在
                 if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
                     // printf("ino: %u\n", inodes.lookup(dp, name, (usize *)&off));
                     ip = inodes.get(ino);
                     inodes.unlock(dp);
                     inodes.put(ctx, dp);
                     inodes.lock(ip);
-                    // 如果待创建对象为文件且存在同名文件，直接返回当前文件的inode
                     if (type == INODE_REGULAR && ip->entry.type == INODE_REGULAR) {
                         return ip;
                     }
                     inodes.unlock(ip);
                     inodes.put(ctx, ip);
-                    // 否则全部异常
                     return 0;
                 }
 
                 // 不存在，分配inode
                 // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
                 // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
-                // 分支功能在allocg中实现，即inode_alloc_group函数
-                while(!(ip = inodes.get(inodes.allocg(ctx, (u16)type, gno)))) {
+                while((ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
                     gno++;
                 }
 
                 // 无法按组分配inode，改为从头寻找空闲块进行分配
-                // 若仍未分配成功，抛出异常
-                if (gno >= NGROUPS && (ip = inodes.get(inodes.alloc(ctx, (u16)type))) == 0) {
+                if (gno >= NGROUPS && (ino = inodes.alloc(ctx, (u16)type)) == 0) {
                     PANIC("create: inodes.alloc");
                 }
 
-                // 初始化磁盘中inode相关信息
+                // 根据inode编号获取inode
+                ip = inodes.get(ino);
+
                 inodes.lock(ip);
                 ip->entry.major = (u16)major;
                 ip->entry.minor = (u16)minor;
@@ -1621,7 +1645,7 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
                                     [228] = sys_ctime}; // 新增的228号系统调用
 ```
 
-之后便可以通过syscall函数
+之后便可以通过syscall函数获取时间信息。
 
 #### 测试代码
 
