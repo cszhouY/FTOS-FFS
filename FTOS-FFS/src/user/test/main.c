@@ -102,7 +102,7 @@ void test_multi_files() {
 	for (int c = 1; c <= ncase; ++c) {
 		unsigned t = 0;
 		for(int i = 0; i < nfile; ++i) {
-			fd = open(filename[i], O_WRONLY);
+			fd = open(filename[i], O_RDONLY);
 			assert(fd > 0);
 			start = syscall(228);
 			for (int _ = 0; _ < fsize; ++_) {
@@ -118,6 +118,59 @@ void test_multi_files() {
 	printf("avg read time %f ms\n", avg);
 }
 
+void test_rw_multi_dir() {
+	char *dirname[5] = {"d1", "d2", "d3", "d4", "d5"};
+	char *filename[10] = {"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10"};
+	for (int i = 0; i < 5; ++i) {
+		if(mkdir(dirname[i], 0000) < 0) {
+			printf("mkdir %s error!\n", dirname[i]);
+			exit(1);
+		}
+	}
+	for(int i = 0; i < 10; ++i) {
+		for (int j = 0; j < 5; ++j) {
+			if (chdir(dirname[j]) < 0) {
+				printf("chdir %s error!\n", dirname[j]);
+				exit(1);
+			}
+			fd = open(filename[i], O_WRONLY | O_CREAT);
+			assert(fd > 0);
+			for (int k = 0; k < INODE_NUM_DIRECT * 4; ++k) {
+				write(fd, buf, BLOCK_SIZE);
+			}
+			close(fd);
+			if (chdir("/") < 0) {
+				printf("chdir / error!\n");
+				exit(1);
+			}
+		}
+	}
+
+	int start, end;
+	double t = 0;
+	start = syscall(228);
+	for(int i = 0; i < 5; ++i) {
+		for (int j = 0; j < 10; ++j) {
+			if (chdir(dirname[i]) < 0) {       
+				printf("chdir %s error!\n", dirname[i]);
+				exit(1);
+			}
+			fd = open(filename[j], O_RDONLY);
+			assert(fd > 0);
+			for (int k = 0; k < INODE_NUM_DIRECT * 4; ++k) {
+				read(fd, buf, BLOCK_SIZE);
+			}
+			close(fd);
+			if (chdir("/") < 0) {
+				printf("chdir / error!\n");
+				exit(1);
+			}
+		}
+	}
+	end = syscall(228);
+	printf("reading 50 files in 5 different directory costs %u ms\n", end - start);
+}
+
 int main(int argc, char const *argv[])
 {
 	init_env();
@@ -127,6 +180,8 @@ int main(int argc, char const *argv[])
 	test_write_large_file();
 
 	test_multi_files();
+
+	test_rw_multi_dir();
 
 	return 0;
 }

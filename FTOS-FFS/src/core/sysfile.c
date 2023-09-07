@@ -321,7 +321,7 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
     // 不存在，分配inode
     // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
     // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
-    while((ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
+    while(gno < NGROUPS && (ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
         gno++;
     }
 
