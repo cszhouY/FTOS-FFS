@@ -516,7 +516,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
             ```c
             static usize inode_alloc(OpContext *ctx, InodeType type) {
                 assert(type != INODE_INVALID);
-                for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
+                for (usize ino = 1; ino <= sblock -> num_inodes; ino++) {
                     usize block_no = to_block_no(ino);
                     // printf("inode %u in block %u\n", ino, block_no);
                     Block *block = cache->acquire(block_no);
@@ -540,6 +540,8 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
         > 至此，基于块组的磁盘结构基本改写完成，系统可以正常运行
 
 * 总结
+
+    除了上述部分，还处理了inode的边界问题，临界inode修改后也可以使用。
 
     块组磁盘结构的修改可以分为两部分：**初始磁盘结构生成**与**文件系统结构支持**，其中mkfs部分的修改侧重于前者，而inode、cache等相关文件则是侧重于后者。
 
@@ -727,10 +729,10 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
                 // ino的含义变为某一块组内相对的inode编号
                 // ino在块组内顺序分配
-                for (usize ino = 1; ino <= GINODES; ino++) {
+                for (usize ino = 1; ino < GINODES; ino++) {
                     // tino为换算后的实际inode编号
                     usize tino = ino + gno * (NINODES / NGROUPS);
-                    assert(tino <= NINODES);
+                    assert(tino < NINODES);
 
                     // 获取待分配的inode所在的块编号
                     usize block_no = to_block_no(tino);
@@ -818,7 +820,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 // 不存在，分配inode
                 // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
                 // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
-                while((ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
+                while((gno < NGROUPS) && (ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
                     gno++;
                 }
 
@@ -1648,6 +1650,8 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
 之后便可以通过syscall函数获取时间信息。
 
 #### 测试代码
+
+
 
 #### 测试结果
 

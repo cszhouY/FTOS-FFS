@@ -77,7 +77,7 @@ static void init_inode(Inode *inode) {
 // see `inode.h`.
 static usize inode_alloc(OpContext *ctx, InodeType type) {
     assert(type != INODE_INVALID);
-    for (usize ino = 1; ino < sblock -> num_inodes; ino++) {
+    for (usize ino = 1; ino <= sblock -> num_inodes; ino++) {
         usize block_no = to_block_no(ino);
         // printf("inode %u in block %u\n", ino, block_no);
         Block *block = cache->acquire(block_no);
@@ -122,6 +122,7 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
     for (usize ino = 1; ino <= GINODES; ino++) {
         // tino为换算后的实际inode编号
         usize tino = ino + gno * (NINODES / NGROUPS);
+
         assert(tino <= NINODES);
 
         // 获取待分配的inode所在的块编号
