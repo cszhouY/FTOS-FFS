@@ -72,28 +72,25 @@ void test_multi_files() {
 	double avg = 0;
 	printf ("===== test multiply files =====\n");
 	const int nfile = 10;
-	int fds[nfile];
-	char filename[nfile];
+	const char filename[nfile][2] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
 	for(int i = 0; i < nfile; ++i) {
-		char tmp[1] = {'0' + i};
-		fds[i] = open(tmp, O_WRONLY | O_CREAT);
-		assert(fds[i] > 0);
-		close(fds[i]);
+		fd = open(filename[i], O_WRONLY | O_CREAT);
+		assert(fd > 0);
+		close(fd);
 	}
 	int loop = 10;
 	while(loop--) {
 		unsigned t = 0;
 		for(int i = 0; i < nfile; ++i) {
-			char tmp[1] = {'0' + i};
-			fds[i] = open(tmp, O_WRONLY);
-			assert(fds[i] > 0);
+			fd = open(filename[i], O_WRONLY);
+			assert(fd > 0);
 			start = syscall(228);
 			for (int _ = 0; _ < INODE_NUM_DIRECT; ++_) {
-				write(fds[i], buf, BLOCK_SIZE);
+				write(fd, buf, BLOCK_SIZE);
 			}
 			end = syscall(228);
 			t += end - start;
-			close(fds[i]);
+			close(fd);
 		}
 		printf("testcase %d, write %d different files at the same derecotry, cost %u ms\n", 10 - loop, nfile, t);
 		avg += (double) t / 10;
