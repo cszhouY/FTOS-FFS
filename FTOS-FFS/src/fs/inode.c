@@ -136,7 +136,7 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
             memset(inode, 0, sizeof(InodeEntry));
             inode->type = type;
             cache->sync(ctx, block);
-            cache->release(block);
+            cache->release(block); 
             return tino;
         }
 
@@ -185,7 +185,7 @@ static void inode_unlock(Inode *inode) {
 // see `inode.h`.
 static Inode *inode_get(usize inode_no) {
     assert(inode_no > 0);
-    assert(inode_no < sblock->num_inodes);
+    assert(inode_no <= sblock->num_inodes);
     acquire_spinlock(&lock);
 
     Inode *inode = NULL;
