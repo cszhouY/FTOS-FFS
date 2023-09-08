@@ -723,37 +723,42 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                             gno = i;
                         }
                     }
+                    if (i == NGROUPS)
+                        return 0;
                 }
 
-                printf("inode_allog gno: %u\n", gno);
+                // printf("inode_allog gno: %u\n", gno);
 
                 // ino的含义变为某一块组内相对的inode编号
                 // ino在块组内顺序分配
-                for (usize ino = 1; ino < GINODES; ino++) {
-                    // tino为换算后的实际inode编号
-                    usize tino = ino + gno * (NINODES / NGROUPS);
-                    assert(tino < NINODES);
+                for (; gno < NGROUPS; gno++) {
+                    for (usize ino = 1; ino <= GINODES; ino++) {
+                        // tino为换算后的实际inode编号
+                        usize tino = ino + gno * (NINODES / NGROUPS);
 
-                    // 获取待分配的inode所在的块编号
-                    usize block_no = to_block_no(tino);
-                    // printf("inode %u in block %u\n", ino, block_no);
-                    Block *block = cache->acquire(block_no);
-                    InodeEntry *inode = get_entry(block, tino);
+                        assert(tino <= NINODES);
 
-                    // 找到空闲inode，进行分配并返回此inode编号
-                    if (inode->type == INODE_INVALID) {
-                        memset(inode, 0, sizeof(InodeEntry));
-                        inode->type = type;
-                        cache->sync(ctx, block);
+                        // 获取待分配的inode所在的块编号
+                        usize block_no = to_block_no(tino);
+                        // printf("inode %u in block %u\n", ino, block_no);
+                        Block *block = cache->acquire(block_no);
+                        InodeEntry *inode = get_entry(block, tino);
+
+                        // 找到空闲inode，进行分配并返回此inode编号
+                        if (inode->type == INODE_INVALID) {
+                            memset(inode, 0, sizeof(InodeEntry));
+                            inode->type = type;
+                            cache->sync(ctx, block);
+                            cache->release(block); 
+                            return tino;
+                        }
+
                         cache->release(block);
-                        return tino;
                     }
-
-                    cache->release(block);
                 }
                 // 这里表明分配失败
                 return 0;
-            }
+            }  
             ```
 
     11. 修改`fs/inode.c`中初始化操作，代码如下所示：
@@ -820,13 +825,11 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 // 不存在，分配inode
                 // 如果为目录类型，寻找最空闲的组并将组号赋值给gno
                 // 如果为文件类型，从父目录所在块组开始按组分配inode，当前组满了考虑在下一组进行分配
-                while((gno < NGROUPS) && (ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
-                    gno++;
-                }
-
-                // 无法按组分配inode，改为从头寻找空闲块进行分配
-                if (gno >= NGROUPS && (ino = inodes.alloc(ctx, (u16)type)) == 0) {
-                    PANIC("create: inodes.alloc");
+                if ((ino = inodes.allocg(ctx, (u16)type, gno)) == 0) {
+                    // 无空闲块
+                    if ((ino = inodes.alloc(ctx, (u16)type)) == 0) {
+                        PANIC("create: inodes.alloc");
+                    }
                 }
 
                 // 根据inode编号获取inode
@@ -1954,7 +1957,6 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
     $ 
     ```
 
-
 ## 遇到的问题与解决方法
 
 ### 问题一：Unexpected syscall
@@ -2070,6 +2072,7 @@ if (end > entry->num_bytes) {
 ### 问题三：最大的inode_no无法分配
 
 原因是断言错误。
+
 ```c
 static Inode *inode_get(usize inode_no) {
     assert(inode_no > 0);
@@ -2098,9 +2101,10 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
 ## 实验总结
 
 通过这次实验，我们组的收获如下：
-+ 重新学习了操作系统的相关知识，对操作系统内核实现有了更加系统的了解
-+ 掌握了对文件系统的原理和实现方法，对xv6的简单文件系统以及快速文件系统深入了解
-+ 学会了对内核级代码的阅读、修改、调试、测试等工作
-+ 增加了团队之间的合作，对大型项目管理积累了宝贵的经验
+
+* 重新学习了操作系统的相关知识，对操作系统内核实现有了更加系统的了解
+* 掌握了对文件系统的原理和实现方法，对xv6的简单文件系统以及快速文件系统深入了解
+* 学会了对内核级代码的阅读、修改、调试、测试等工作
+* 增加了团队之间的合作，对大型项目管理积累了宝贵的经验
 
 同时这次实验难度较大，其中代码还出现了一些小问题和不够间接的地方，希望教学团队改进。

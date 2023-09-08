@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 #include <fs/defines.h>
 #include <assert.h>
 
