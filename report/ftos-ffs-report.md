@@ -894,12 +894,9 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 if (index < INODE_NUM_DIRECT) {
                     if (entry->addrs[index] == 0) {
                         // 从父目录块组开始顺序寻找可分配块组
-                        while(gno < NGROUPS && !(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
-                            gno++;
-                        }
-                        // 否则使用默认alloc函数进行分配
-                        if (gno >= NGROUPS) {
-                            entry->indirect = (u32)cache->alloc(ctx);
+                        if ((entry->addrs[index] = (u32)cache->allocg(ctx, gno)) == 0) {
+                            // 否则使用默认alloc函数进行分配
+                            entry->addrs[index] = (u32)cache->alloc(ctx);
                         }
                         set_flag(modified);
                     }
@@ -912,10 +909,8 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
                 // 分配间接块索引块，与小文件处理方式一致
                 if (entry->indirect == 0) {
-                    while(gno < NGROUPS && !(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
-                        gno++;
-                    }
-                    if (gno >= NGROUPS) {
+                    if ((entry->indirect = (u32)cache->allocg(ctx, gno)) == 0) {
+                        // 否则使用默认alloc函数进行分配
                         entry->indirect = (u32)cache->alloc(ctx);
                     }
                     set_flag(modified);
@@ -951,7 +946,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
                 usize addr = addrs[index];
                 cache->release(block);
                 return addr;
-            }
+            }   
             ```
 
             > 至此完成了对大文件的支持
@@ -2063,7 +2058,7 @@ bad:
 
 ### 问题二：num_bytes突变为0
 
-原因是此处`end`强制转换为`u16`类型，溢出部分将强制截断，应该改为`u32`
+原因是`inode.c`中的**inode_write**函数强制转换 `end` 为 `u16` 类型，溢出部分将强制截断，应该改为 `u32`，代码如下：
 
 ```c
 if (end > entry->num_bytes) {
@@ -2074,7 +2069,7 @@ if (end > entry->num_bytes) {
 
 ### 问题三：最大的inode_no无法分配
 
-原因是断言错误。
+原始代码默认的inode分配区间实际上是 1 ~ num_inodes-1，而我们修改后的文件系统允许范围是 1 ~ num_inodes，因此需要修改一些断言，下面是一个例子：
 
 ```c
 static Inode *inode_get(usize inode_no) {
@@ -2086,6 +2081,8 @@ static Inode *inode_get(usize inode_no) {
 ```
 
 ### 问题四：多次调用inodes.lookup
+
+原始代码 `core/sysfile.c` 中 **create** 函数的定义中调用了两次 **inode.lookup** 函数，而这个函数实际上会修改传入的参数 **off**，也就是文件项在目录中的偏移位置，没有必要调用两次，修改后的代码如下所示：
 
 ```c
 Inode *create(char *path, short type, short major, short minor, OpContext *ctx) {
@@ -2100,6 +2097,16 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
     }
 }
 ```
+
+### 问题五：块大小修改问题
+
+由于arena相关文件的限制，块大小无法修改为4096。修改块大小后，文件系统可以正常生成（mkfs正常工作），但是在进入文件系统的初始化阶段中sd初始化会出现问题，包括：
+
+* 超级块无法正常读取
+* EMMC send command error
+* 其他错误
+
+由于sd相关文件较多，没有定位到问题。
 
 ## 实验总结
 
