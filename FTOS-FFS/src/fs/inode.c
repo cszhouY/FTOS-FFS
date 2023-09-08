@@ -117,42 +117,34 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
             return 0;
     }
 
-    if (type == INODE_REGULAR) {
-        for (; gno < NGROUPS; gno++) {
-            if (used_block[gno] < sblock->num_datablocks_per_group) {
-                break;
-            }
-        }
-        if (gno == NGROUPS)
-            return 0;
-    }
-
     // printf("inode_allog gno: %u\n", gno);
 
     // ino的含义变为某一块组内相对的inode编号
     // ino在块组内顺序分配
-    for (usize ino = 1; ino <= GINODES; ino++) {
-        // tino为换算后的实际inode编号
-        usize tino = ino + gno * (NINODES / NGROUPS);
+    for (; gno < NGROUPS; gno++) {
+        for (usize ino = 1; ino <= GINODES; ino++) {
+            // tino为换算后的实际inode编号
+            usize tino = ino + gno * (NINODES / NGROUPS);
 
-        assert(tino <= NINODES);
+            assert(tino <= NINODES);
 
-        // 获取待分配的inode所在的块编号
-        usize block_no = to_block_no(tino);
-        // printf("inode %u in block %u\n", ino, block_no);
-        Block *block = cache->acquire(block_no);
-        InodeEntry *inode = get_entry(block, tino);
+            // 获取待分配的inode所在的块编号
+            usize block_no = to_block_no(tino);
+            // printf("inode %u in block %u\n", ino, block_no);
+            Block *block = cache->acquire(block_no);
+            InodeEntry *inode = get_entry(block, tino);
 
-        // 找到空闲inode，进行分配并返回此inode编号
-        if (inode->type == INODE_INVALID) {
-            memset(inode, 0, sizeof(InodeEntry));
-            inode->type = type;
-            cache->sync(ctx, block);
-            cache->release(block); 
-            return tino;
+            // 找到空闲inode，进行分配并返回此inode编号
+            if (inode->type == INODE_INVALID) {
+                memset(inode, 0, sizeof(InodeEntry));
+                inode->type = type;
+                cache->sync(ctx, block);
+                cache->release(block); 
+                return tino;
+            }
+
+            cache->release(block);
         }
-
-        cache->release(block);
     }
     // 这里表明分配失败
     return 0;
