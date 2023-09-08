@@ -1,3 +1,4 @@
 /FTOS-FFS/build/*
 /FTOS-FFS/src/fs/test/build/*
+/FTOS/build/*
 .vscode/*

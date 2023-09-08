@@ -48,7 +48,7 @@ struct xv6_stat;
 #define NIPG (NINODES / NGROUPS)
 #define NINBLOCKS_PER_GROUP (NINDIRECT / (NGROUPS - 1 ) * 2 + 1)
 
-#define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
+#define IBLOCK(i, sb) (sb.bg_start + BPG * ((i - 1) / NIPG) + ((i - 1) % NIPG) / IPB)
 #define IGROUP(i, sb) ((i - 1) / NIPG)
 #define BGROUP(b, sb) ((b - 2 - LOG_MAX_SIZE) / BPG) 
 

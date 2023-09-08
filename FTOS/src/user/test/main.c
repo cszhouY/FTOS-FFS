@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 #include <fs/defines.h>
 #include <assert.h>
 
@@ -135,7 +136,7 @@ void test_rw_multi_dir() {
 			}
 			fd = open(filename[i], O_WRONLY | O_CREAT);
 			assert(fd > 0);
-			for (int k = 0; k < INODE_NUM_DIRECT * 4; ++k) {
+			for (int k = 0; k < INODE_NUM_DIRECT * 8; ++k) {
 				write(fd, buf, BLOCK_SIZE);
 			}
 			close(fd);
@@ -157,7 +158,7 @@ void test_rw_multi_dir() {
 			}
 			fd = open(filename[j], O_RDONLY);
 			assert(fd > 0);
-			for (int k = 0; k < INODE_NUM_DIRECT * 4; ++k) {
+			for (int k = 0; k < INODE_NUM_DIRECT * 8; ++k) {
 				read(fd, buf, BLOCK_SIZE);
 			}
 			close(fd);

@@ -29,8 +29,9 @@ static INLINE usize to_block_no(usize inode_no) {
     // inode所在的块编号 = 
     //      块组起始位置 + 块组偏移 + inode块组内偏移
     return sblock->bg_start + 
-            sblock->blocks_per_group * ((inode_no - 1) / GINODES) + 
-            (((inode_no - 1) % GINODES) / (INODE_PER_BLOCK));
+           sblock->blocks_per_group * ((inode_no - 1) / GINODES) + 
+           (((inode_no - 1) % GINODES) / (INODE_PER_BLOCK));
+
 }
 
 // return the pointer to on-disk inode.

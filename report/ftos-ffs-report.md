@@ -1827,10 +1827,13 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
 
 #### 测试结果
 
-![test](/pics/test.png)
+![test](pics/test.jpg)
 
 ![test1](pics/test1.png)
 ![test2](pics/test2.png)
+
+![单文件](pics/单文件写测试.png)
+![多文件](pics/多文件读写测试.png)
 
 ### shell功能验证
 

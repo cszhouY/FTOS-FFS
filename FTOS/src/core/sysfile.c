@@ -210,7 +210,7 @@ Inode *create(char *path, short type, short major, short minor, OpContext *ctx) 
         return 0;
     }
     inodes.lock(dp);
-    int ino;
+    usize ino;
     if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
         ip = inodes.get(ino);
         inodes.unlock(dp);
