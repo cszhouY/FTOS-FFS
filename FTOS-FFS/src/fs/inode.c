@@ -113,6 +113,18 @@ static usize inode_alloc_group(OpContext *ctx, InodeType type, u32 gno) {
                 gno = i;
             }
         }
+        if (i == NGROUPS)
+            return 0;
+    }
+
+    if (type == INODE_REGULAR) {
+        for (; gno < NGROUPS; gno++) {
+            if (used_block[gno] < sblock->num_datablocks_per_group) {
+                break;
+            }
+        }
+        if (gno == NGROUPS)
+            return 0;
     }
 
     // printf("inode_allog gno: %u\n", gno);
@@ -295,13 +307,10 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
     if (index < INODE_NUM_DIRECT) {
         if (entry->addrs[index] == 0) {
             // 从父目录块组开始顺序寻找可分配块组
-            while (gno < NGROUPS && !(entry->addrs[index] = (u32)cache->allocg(ctx, gno))) {
-                gno++;
+            if ((entry->addrs[index] = (u32)cache->allocg(ctx, gno)) == 0) {
+                // 否则使用默认alloc函数进行分配
+                entry->addrs[index] = (u32)cache->alloc(ctx);
             }
-            // 否则使用默认alloc函数进行分配
-            if (gno >= NGROUPS) {
-                entry->indirect = (u32)cache->alloc(ctx);
-            } 
             set_flag(modified);
         }
 
@@ -313,12 +322,10 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset, bool *modifie
 
     // 分配间接块索引块，与小文件处理方式一致
     if (entry->indirect == 0) {
-        while (gno < NGROUPS && !(entry->indirect = (u32)cache->allocg(ctx, gno))) {
-            gno++;
-        }
-        if (gno >= NGROUPS) {
+        if ((entry->indirect = (u32)cache->allocg(ctx, gno)) == 0) {
+            // 否则使用默认alloc函数进行分配
             entry->indirect = (u32)cache->alloc(ctx);
-        } 
+        }
         set_flag(modified);
     }
 
