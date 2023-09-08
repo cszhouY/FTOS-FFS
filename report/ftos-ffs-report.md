@@ -1824,7 +1824,10 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
 
 #### 测试结果
 
-![]()
+![test](/pics/test.png)
+
+![test1](pics/test1.png)
+![test2](pics/test2.png)
 
 ### shell功能验证
 
@@ -1950,3 +1953,154 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
     build          16384 121 48
     $ 
     ```
+
+
+## 遇到的问题与解决方法
+
+### 问题一：Unexpected syscall
+
+出现`Unexpected syscall`的报错，且程序编译正常。这是因为程序在运行时，陷入内核时没有找到正确的系统调用。系统调用由操作系统提供，每一个系统调用都对应一个系统调用号，libc库在陷入内核时，仅通过系统调用号来调用系统函数。
+
+为了支持测试时的时间统计函数和shell中的rm命令，需要在系统中添加两个系统调用。
+
+```c
+#define NR_SYSCALL 512
+int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
+                                      [87] = sys_unlink,  
+                                      [228] = sys_ctime};
+
+int sys_ctime() {
+    u64 pct, frq;
+    asm volatile("mrs %[cnt], cntpct_el0" : [cnt] "=r"(pct));
+    asm volatile("mrs %[freq], cntfrq_el0" : [freq] "=r"(frq));
+    return (int)(pct / (frq / 1000));
+}
+
+int sys_unlink()
+{
+    Inode *ip, *dp;
+    struct dirent de;
+    char name[FILE_NAME_MAX_LENGTH], *path;
+    usize off;
+
+    // 读取系统调用传递的参数，参数只包含路径，否则直接退出
+    if(argstr(0, &path) < 0) {
+        printf("argstr(0, &path) < 0\n");
+        return -1;
+    }
+
+    // 开始一次原子操作
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+    // 待删除对象不存在父目录，异常直接退出
+    if((dp = nameiparent(path, name, &ctx)) == 0){
+        bcache.end_op(&ctx);
+        printf("(dp = nameiparent(path, name, &ctx)) == 0");
+        return -1;
+    }
+
+    inodes.lock(dp);
+
+    // 对于隐藏对象，无法进行删除操作
+    if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
+        goto bad;
+
+    // 获取待删除对象以及其在父目录的目录项的偏移
+    if((ip = inodes.get(inodes.lookup(dp, name, &off))) == 0)
+        goto bad;
+
+    inodes.lock(ip);
+
+    if(ip->entry.num_links < 1)
+        PANIC("unlink: nlink < 1");
+
+    // printf("dp->entry.num_links: %d\n", dp->entry.num_links);
+    
+    // 无法删除非空文件夹
+    if(ip->entry.type == INODE_DIRECTORY && !inodes.empty(ip)){
+        inodes.unlock(ip);
+        inodes.put(&ctx, ip);
+        goto bad;
+    }
+
+    // 删除待删除对象在父目录中的项
+    memset(&de, 0, sizeof(de));
+    if(inodes.write(&ctx, dp, (u8*)&de, off * sizeof(de), sizeof(de)) != sizeof(de))
+        PANIC("unlink: inode_write");
+    // 待删除对象为目录类型，父目录需要额外减少num_links
+    // 即删除对象内包含父目录的硬链接，删除对象后这一链接丢失
+    if(ip->entry.type == INODE_DIRECTORY){
+        dp->entry.num_links--;
+        inodes.sync(&ctx, dp, 1);
+    }
+    inodes.unlock(dp);
+    inodes.put(&ctx, dp);
+
+    // 文件本身而言删除指向自身的硬链接
+    ip->entry.num_links--;
+    inodes.sync(&ctx, ip, 1);
+    inodes.unlock(ip);
+    inodes.put(&ctx, ip);
+
+    bcache.end_op(&ctx);
+
+    return 0;
+
+// 无法删除的情况
+bad:
+    // printf ("bad!");
+    inodes.unlock(dp);
+    inodes.put(&ctx, dp);
+    bcache.end_op(&ctx);
+    return -1;
+}
+```
+
+### 问题二：num_bytes突变为0
+
+原因是此处`end`强制转换为`u16`类型，溢出部分将强制截断，应该改为`u32`
+
+```c
+if (end > entry->num_bytes) {
+    entry->num_bytes = (u32)end;  // u16改为u32
+    modified = true;
+}
+```
+
+### 问题三：最大的inode_no无法分配
+
+原因是断言错误。
+```c
+static Inode *inode_get(usize inode_no) {
+    assert(inode_no > 0);
+    assert(inode_no <= sblock->num_inodes);  // <改为<=
+    acquire_spinlock(&lock);
+    // ...
+}
+```
+
+### 问题四：多次调用inodes.lookup
+
+```c
+Inode *create(char *path, short type, short major, short minor, OpContext *ctx) {
+
+    // ...
+
+    // 文件名已存在
+    if ((ino = inodes.lookup(dp, name, (usize *)&off)) != 0) {
+        // printf("ino: %u\n", inodes.lookup(dp, name, (usize *)&off));
+        ip = inodes.get(ino);
+        // ...
+    }
+}
+```
+
+## 实验总结
+
+通过这次实验，我们组的收获如下：
++ 重新学习了操作系统的相关知识，对操作系统内核实现有了更加系统的了解
++ 掌握了对文件系统的原理和实现方法，对xv6的简单文件系统以及快速文件系统深入了解
++ 学会了对内核级代码的阅读、修改、调试、测试等工作
++ 增加了团队之间的合作，对大型项目管理积累了宝贵的经验
+
+同时这次实验难度较大，其中代码还出现了一些小问题和不够间接的地方，希望教学团队改进。
