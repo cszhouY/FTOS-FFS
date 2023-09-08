@@ -160,7 +160,7 @@ Shell是用户与类UNIX操作系统的交互界面，一般是通过命令行�
 
             ```c
             // 根据inode编号获取其所在的块编号
-            #define IBLOCK(i, sb) (sb.bg_start + BPG * (i / NIPG) + (i % NIPG) / IPB)
+            #define IBLOCK(i, sb) (sb.bg_start + BPG * ((i - 1) / NIPG) + ((i - 1) % NIPG) / IPB)
             // 根据inode编号获取其所在的块组编号
             #define IGROUP(i, sb) ((i - 1) / NIPG)
             // 根据块编号获取其所在的块组编号
