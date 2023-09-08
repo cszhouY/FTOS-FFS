@@ -1824,7 +1824,7 @@ int (*syscall_table[NR_SYSCALL])() = {[0 ... NR_SYSCALL - 1] = sys_default,
 
 #### 测试结果
 
-
+![test](/pics/test.png)
 
 ![test1](pics/test1.png)
 ![test2](pics/test2.png)
